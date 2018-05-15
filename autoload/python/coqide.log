@@ -1,0 +1,19 @@
+XMLInputThread starts.
+XMLOutputThread starts.
+CoqtopHandle sends call: InitReq()
+XMLOutputThread sends: b'<call val="Init"><option val="none" /></call>'
+XMLInputThread receives: b'<value val="good"><state_id val="1"/></value>'
+CoqtopHandle receives value.
+CoqtopHandle sends call: AddReq(command='Inductive bool : Type :=\n  | true : bool\n  | false : bool.', edit_id=-1, state_id=StateID(value=1), verbose=False)
+XMLOutputThread sends: b'<call val="Add"><pair><pair><string>Inductive bool : Type :=\n  | true : bool\n  | false : bool.</string><int>-1</int></pair><pair><state_id val="1" /><bool val="false" /></pair></pair></call>'
+XMLInputThread receives: b'<value val="good"><pair><state_id val="2"/><pair><union val="in_l"><unit/></union><string></string></pair></pair></value>'
+CoqtopHandle receives value.
+CoqtopHandle sends call: GoalReq()
+XMLOutputThread sends: b'<call val="Goal"><unit /></call>'
+XMLInputThread receives: b'<feedback object="state" route="0"><state_id val="2"/><feedback_content val="processingin"><string>master</string></feedback_content></feedback>'
+CoqtopHandle receives feedback: Feedback(state_id=StateID(value=2), content=ProcessingIn(worker='master'))
+XMLInputThread receives: b'<feedback object="state" route="0"><state_id val="1"/><feedback_content val="processed"/></feedback><feedback object="state" route="0"><state_id val="2"/><feedback_content val="processed"/></feedback><value val="good"><option val="none"/></value>'
+CoqtopHandle receives feedback: Feedback(state_id=StateID(value=1), content=Processed())
+CoqtopHandle receives feedback: Feedback(state_id=StateID(value=2), content=Processed())
+CoqtopHandle receives value.
+XMLInputThread quits normally.
