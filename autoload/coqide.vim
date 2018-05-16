@@ -142,7 +142,7 @@ endfunction
 command! CoqActivate call coqide#Activate()
 command! CoqDeactivate call coqide#Deactivate()
 
-hi default CoqStcProcessing ctermbg=60 guibg=LimeGreen
-hi default CoqStcProcessed ctermbg=17 guibg=LightGreen
-hi default CoqStcAxiom ctermbg=14 guibg=Yellow
+hi default CoqStcProcessing ctermbg=147 guibg=#AAAAFF
+hi default CoqStcProcessed ctermbg=22 guibg=#2F5C00
+hi default CoqStcAxiom ctermbg=227 guibg=#E8ED51
 hi link CoqStcError Error
