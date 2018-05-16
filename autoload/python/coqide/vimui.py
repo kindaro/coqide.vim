@@ -31,6 +31,7 @@ def create_window(name, filetype, split_method):
     vim.command('setlocal norelativenumber')
     vim.command('setlocal nocursorline')
     vim.command('setlocal nomodifiable')
+    vim.command('setlocal nobuflisted')
     vim.command('setlocal filetype=' + filetype)
     return int(vim.eval('bufnr("%")'))
 
