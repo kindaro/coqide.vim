@@ -21,6 +21,10 @@ if !exists('g:coqide_debug_file')
     let g:coqide_debug_file = 'coqide.log'
 endif
 
+if !exists('g:coqide_auto_close_session')
+    let g:coqide_auto_close_session = 'delete'
+endif
+
 if g:coqide_debug
     execute 'py3 coqide.setup_debug_log("' . g:coqide_debug_file . '")'
 endif
@@ -146,7 +150,15 @@ function! coqide#Setup()
     autocmd BufEnter <buffer> call coqide#HandleEvent('focus')
     autocmd BufWinEnter <buffer> call coqide#HandleEvent('active')
     autocmd BufWinLeave <buffer> call coqide#HandleEvent('inactive')
-    autocmd BufUnload <buffer> CoqCloseSession
+
+    if g:coqide_auto_close_session == 'unload'
+        autocmd BufUnload <buffer> CoqCloseSession
+    elseif g:coqide_auto_close_session == 'delete'
+        autocmd BufDelete <buffer> CoqCloseSession
+    else
+        echoerr 'g:coqide_auto_close_session must be "unload" or "delete"'
+        autocmd BufDelete <buffer> CoqCloseSession
+    endif
 
     CoqNewSession
 endfunction
