@@ -7,6 +7,7 @@ import contextlib
 import functools
 import itertools
 import logging
+import sys
 
 import vim                                                # pylint: disable=E0401
 
@@ -112,7 +113,6 @@ class GoalWindow:
                 # Create the goal window on the right.
                 self._bufnr = create_window('Goal', 'coq-goals', 'rightbelow vnew')
 
-            logger.debug('GoalWindow: buffer number = {}'.format(self._bufnr))
             set_buffer_lines(self._bufnr, self._content)
 
     def hide(self):
@@ -134,20 +134,25 @@ class GoalWindow:
     def show_goal(self, goals):
         '''Set the content of the goal window.'''
         content = []
-        if goals is None:
-            content.append('No subgoals.')
-        else:
+        if goals is not None:
             nr_bg = len(goals.background)
             if nr_bg > 0:
-                content.append('There are unfocused goals.')
+                content.append('This subproof is complete, but there are some unfocused goals:')
+                content.append('')
 
             nr_fg = len(goals.foreground)
             if nr_fg > 0:
+                if nr_fg == 1:
+                    content.append('1 subgoal')
+                else:
+                    content.append('{} subgoals'.format(nr_fg))
                 for hyp in goals.foreground[0].hypotheses:
                     content.append(hyp)
                 for index, goal in enumerate(goals.foreground):
-                    content.append('===================== ({}/{})'.format(index + 1, nr_fg))
+                    content.append('__________________________ ({}/{})'.format(index + 1, nr_fg))
                     content.append(goal.goal)
+            elif nr_fg == 0 and nr_bg == 0:
+                content.append('No more subgoals.')
 
         self._content = content
         if self._bufnr and is_buffer_active(self._bufnr):
@@ -180,7 +185,6 @@ class MessageWindow:
                 # Create the message window on the right.
                 self._bufnr = create_window('Message', 'coq-messages', 'rightbelow vnew')
 
-            logger.debug('MessageWindow: buffer number = %s', self._bufnr)
             set_buffer_lines(self._bufnr, self._content)
 
     def hide(self):
@@ -201,12 +205,7 @@ class MessageWindow:
 
     def show_message(self, message, error):
         '''Set the content of the message window.'''
-        if error:
-            content = 'Error: '
-        else:
-            content = ''
-        content += message
-        self._content = [content]
+        self._content = message.split('\n')
         if self._bufnr and is_buffer_active(self._bufnr):
             set_buffer_lines(self._bufnr, self._content)
 
@@ -332,7 +331,7 @@ def in_session(func):
     def wrapped(self):                                   # pylint: disable=C0111
         session, bufnr = self._get_current_session()     # pylint: disable=W0212
         if session is None:
-            logger.error('The current buffer is not a Coq session.')
+            print('Not in Coq')
             return
         func(self, session, bufnr)
     return wrapped
@@ -341,7 +340,13 @@ def in_session(func):
 def get_cursor():
     '''Return the cursor mark.'''
     _, line, col, _ = vim.eval('getpos(".")')
-    return Mark(int(line), int(col))
+    line, col = int(line), int(col)
+
+    mode = vim.eval('mode()')
+    if mode[0] != 'i':
+        col += 1
+
+    return Mark(line, col)
 
 
 def find_stop_after(start):
@@ -434,7 +439,7 @@ class UICommandHandler:
                 if start.line == stop.line:
                     len1 = stop.col - start.col
                 else:
-                    len1 = len(buf[start.line]) - start.col
+                    len1 = len(buf[start.line - 1]) - start.col + 1
 
                 cmd = 'matchaddpos("{}", [[{}, {}, {}]])'.format(
                     hlgroup, start.line, start.col, len1)
@@ -446,7 +451,7 @@ class UICommandHandler:
 
                 if start.line != stop.line:
                     cmd = 'matchaddpos("{}", [[{}, {}, {}]])'.format(
-                        hlgroup, stop.line, 0, stop.col)
+                        hlgroup, stop.line, 1, stop.col - 1)
                     match_ids.append(vim.eval(cmd))
 
         def unhighlight():
@@ -462,7 +467,7 @@ class UICommandHandler:
         '''Notify the user that the connection to the coqtop process is lost.'''
         def conn_lost_cmd():
             '''Notify the user that the connection is lost.'''
-            pass
+            vim.command('echom "{}"'.format('Coqtop subprocess quits unexpectedly.'))
         self._pending_ui_cmds.append(conn_lost_cmd)
 
 
@@ -477,6 +482,7 @@ class VimUI:
         self._message.show(self._goal.bufnr())
         self._ui_cmds = UICommandHandler(self._goal, self._message)
         self._sessions = {}
+        self._focused_bufnr = None
 
     def new_session(self):
         '''Create a new session bound to the current buffer.'''
@@ -545,7 +551,7 @@ class VimUI:
             self._forward_to_cursor(session, bufnr, cursor)
         else:
             logger.debug('Backward to cursor in session [%s]', bufnr)
-            session.backward_to_cursor(cursor)
+            session.backward_before_mark(cursor, self._ui_cmds)
 
     def set_goal_visibility(self, visibility):
         '''Set the visibility of the goal window to 'show', 'hide' or 'toggle'.'''
@@ -569,9 +575,23 @@ class VimUI:
         else:
             raise ValueError('Invalid visibility: {}'.format(visibility))
 
+    @in_session
+    def focus(self, session, bufnr):
+        '''The current buffer has got focus.'''
+        if bufnr != self._focused_bufnr:
+            if self._focused_bufnr in self._sessions:
+                logger.debug('Unfocus session [%s]', self._focused_bufnr)
+                self._sessions[self._focused_bufnr].unfocus(self._ui_cmds)
+            logger.debug('Focus session [%s]', bufnr)
+            self._focused_bufnr = bufnr
+            session.focus(self._ui_cmds)
+
     def update_ui(self):
         '''Update the UI events.'''
-        self._ui_cmds.update_ui()
+        try:
+            self._ui_cmds.update_ui()
+        except Exception:
+            logger.debug('Catched exception in update_ui', exc_info=True)
 
     def _get_current_session(self):
         '''Return the session bound to the current buffer.'''
@@ -580,6 +600,8 @@ class VimUI:
 
     def _forward_to_cursor(self, session, bufnr, cursor):
         '''Go forward to the sentence before the cursor.'''
+        logger.debug('Forward to cursor in session [%s]', bufnr)
+
         start = session.get_last_stop()
         cursor = get_cursor()
         regions = []
@@ -589,7 +611,7 @@ class VimUI:
             if stop is None or \
                     stop.line > cursor.line or \
                     (stop.line == cursor.line and stop.col > cursor.col):
-                return
+                break
 
             text = get_buffer_text(start, stop)
             region = SentenceRegion(bufnr, start, stop, text)

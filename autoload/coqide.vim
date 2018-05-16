@@ -24,6 +24,11 @@ function! coqide#Activate()
     py3 ide = coqide.activate()
     let s:activated = 1
 
+    if !exists('s:coqide_auto_deactivate')
+        let s:coqide_auto_deactivate = 1
+        autocmd VimLeavePre * CoqDeactivate
+    endif
+
     command! CoqShowGoal call coqide#ShowGoal
     command! CoqHideGoal call coqide#HideGoal
     command! CoqToggleGoal call coqide#ToggleGoal
@@ -106,14 +111,15 @@ function! coqide#ToggleMessage()
     py3 ide.set_message_visibility('toggle')
 endfunction
 
+function! coqide#Focus()
+    py3 ide.focus()
+endfunction
+
 function! coqide#UpdateUI(...)
     py3 ide.update_ui()
 endfunction
 
 function! coqide#Setup()
-    command! CoqActivate call coqide#Activate()
-    command! CoqDeactivate call coqide#Deactivate()
-
     CoqActivate
 
     command! -buffer CoqNewSession call coqide#NewSession()
@@ -127,12 +133,16 @@ function! coqide#Setup()
     noremap <buffer> <f4> :CoqToCursor<cr>
 
     setlocal bufhidden=hide
-    hi default CoqStcProcessing ctermbg=60 guibg=LimeGreen
-    hi default CoqStcProcessed ctermbg=17 guibg=LightGreen
-    hi default CoqStcAxiom ctermbg=14 guibg=Yellow
-    hi link CoqStcError Error
-
-    autocmd! BufUnload <buffer> CoqCloseSession
+    autocmd BufEnter <buffer> call coqide#Focus()
+    autocmd BufUnload <buffer> CoqCloseSession
 
     CoqNewSession
 endfunction
+
+command! CoqActivate call coqide#Activate()
+command! CoqDeactivate call coqide#Deactivate()
+
+hi default CoqStcProcessing ctermbg=60 guibg=LimeGreen
+hi default CoqStcProcessed ctermbg=17 guibg=LightGreen
+hi default CoqStcAxiom ctermbg=14 guibg=Yellow
+hi link CoqStcError Error

@@ -164,11 +164,9 @@ class FeedbackHandler:                                # pylint: disable=R0903
 
     def _on_processed(self, _, sentence):
         '''Highlight the sentence to "Processed" state.'''
-        logger.debug('Before on_processed')
         if sentence:
             logger.debug('Sentence: %s', sentence.region)
             sentence.set_processed(self._ui_cmds.highlight)
-        logger.debug('After on_processed')
 
     def _on_added_axiom(self, _, sentence):
         '''Highlight the sentence to "Unsafe" state.'''

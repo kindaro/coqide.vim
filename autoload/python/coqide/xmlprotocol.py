@@ -169,7 +169,7 @@ _CONVERTERS_FROM_XML = [
     ['unit', lambda _: None],
     [lambda v: v.tag == 'bool' and v.attrib['val'] == 'true', lambda _: True],
     [lambda v: v.tag == 'bool' and v.attrib['val'] == 'false', lambda _: False],
-    ['string', lambda v: v.text],
+    ['string', lambda v: v.text or ''],
     ['int', lambda v: int(v.text)],
     ['state_id', lambda v: StateID(int(v.attrib['val']))],
     ['list', lambda v: [_data_from_xml(i) for i in v]],

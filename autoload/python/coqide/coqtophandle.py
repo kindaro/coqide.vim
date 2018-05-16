@@ -48,9 +48,7 @@ class XMLInputThread:
                 try:
                     root = ET.fromstringlist(wrapped_doc)
                     for element in root:
-                        logger.debug('XMLInputThread before cb_data')
                         cb_data(element)
-                        logger.debug('XMLInputThread after cb_data')
                     fragments = []
                 except ET.ParseError:
                     pass
