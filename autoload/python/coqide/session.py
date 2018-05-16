@@ -146,15 +146,16 @@ class Session:
 
     def __init__(self, make_stm, make_coqtop_handle, ui_cmds):
         '''Create a new Coq session.'''
+        self._ui_state = UIState()
+
         stm = make_stm()
-        stm_fb_handler = stm.make_feedback_handler(ui_cmds)
+        stm_fb_handler = stm.make_feedback_handler(self._proxy(ui_cmds))
         fb_handler = chain_feedback_handlers([stm_fb_handler])
         handle = make_coqtop_handle('utf-8', fb_handler)
         stm.init(handle.call_async, ui_cmds)
 
         self._stm = stm
         self._handle = handle
-        self._ui_state = UIState()
 
     def forward(self, sregion, ui_cmds):
         '''Process a new sentence region and go forward.'''

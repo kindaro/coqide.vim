@@ -451,18 +451,22 @@ class UICommandHandler:
                 else:
                     len1 = len(buf[start.line - 1]) - start.col + 1
 
-                cmd = 'matchaddpos("{}", [[{}, {}, {}]])'.format(
-                    hlgroup, start.line, start.col, len1)
-                match_ids.append(vim.eval(cmd))
+                match_args = []
+                match_args.append([start.line, start.col, len1])
 
                 for line_num in range(start.line + 1, stop.line):
-                    cmd = 'matchaddpos("{}", [{}])'.format(hlgroup, line_num)
-                    match_ids.append(vim.eval(cmd))
+                    match_args.append(line_num)
+                    if len(match_args) == 7:
+                        cmd = 'matchaddpos("{}", {})'.format(hlgroup, match_args)
+                        match_ids.append(vim.eval(cmd))
+                        match_args = []
 
                 if start.line != stop.line:
-                    cmd = 'matchaddpos("{}", [[{}, {}, {}]])'.format(
-                        hlgroup, stop.line, 1, stop.col - 1)
-                    match_ids.append(vim.eval(cmd))
+                    match_args.append([stop.line, 1, stop.col - 1])
+
+                cmd = 'matchaddpos("{}", {})'.format(hlgroup, match_args)
+                match_ids.append(vim.eval(cmd))
+                match_args = []
 
         def unhighlight():
             '''Unhighlight the region.'''
@@ -514,7 +518,7 @@ class VimUI:
     def deactivate(self):
         '''Close all the sessions and windows.'''
         logger.debug('Close all sessions.')
-        for session in self._sessions:
+        for session in self._sessions.values():
             session.close()
         self._sessions = {}
         self._goal.hide()

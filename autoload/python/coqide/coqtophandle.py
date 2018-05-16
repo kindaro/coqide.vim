@@ -181,7 +181,6 @@ class CoqtopHandle:
         if self._process.poll():
             raise RuntimeError('Coqtop has terminated.')
 
-        logger.debug('CoqtopHandle sends call: %s', req)
         self._cb_res_queue.put((cb_res, cb_lost))
         self._output_thread.send(req.to_xml())
 
@@ -189,10 +188,8 @@ class CoqtopHandle:
         '''On receiving a XML element from the coqtop process.'''
         if xml.tag == 'feedback':
             feedback = xp.Feedback.from_xml(xml)
-            logger.debug('CoqtopHandle receives feedback: %s', feedback)
             self._cb_feedback(feedback)
         elif xml.tag == 'value':
-            logger.debug('CoqtopHandle receives value.')
             try:
                 cb_res, _ = self._cb_res_queue.get_nowait()
                 cb_res(xml)
