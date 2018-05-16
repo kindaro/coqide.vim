@@ -122,12 +122,12 @@ function! coqide#ToggleMessage()
     py3 ide.set_message_visibility('toggle')
 endfunction
 
-function! coqide#Focus()
-    py3 ide.focus()
-endfunction
-
 function! coqide#UpdateUI(...)
     py3 ide.update_ui()
+endfunction
+
+function! coqide#HandleEvent(event)
+    execute 'py3 ide.handle_event("' . a:event . '")'
 endfunction
 
 function! coqide#Setup()
@@ -143,8 +143,9 @@ function! coqide#Setup()
     noremap <buffer> <f3> :CoqBackward<cr>
     noremap <buffer> <f4> :CoqToCursor<cr>
 
-    setlocal bufhidden=hide
-    autocmd BufEnter <buffer> call coqide#Focus()
+    autocmd BufEnter <buffer> call coqide#HandleEvent('focus')
+    autocmd BufWinEnter <buffer> call coqide#HandleEvent('active')
+    autocmd BufWinLeave <buffer> call coqide#HandleEvent('inactive')
     autocmd BufUnload <buffer> CoqCloseSession
 
     CoqNewSession

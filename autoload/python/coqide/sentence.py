@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)           # pylint: disable=C0103
 
 Mark = namedtuple('Mark', 'line col')
 SentenceRegion = namedtuple('SentenceRegion', 'doc_id start stop command')
+HighlightRegion = namedtuple('HighlightRegion', 'doc_id start stop hlgroup')
 
 
 class OffsetToMark:
@@ -101,20 +102,17 @@ class Sentence:
 
     def _highlight(self, hlgroup, highlight_func):
         '''Highlight the whole sentence to the given highlight group.'''
-        logger.debug('Before unhighlight')
         if self._unhighlight:
             self._unhighlight()
-        logger.debug('Before highlight')
-        self._unhighlight = highlight_func(self.region.doc_id, self.region.start,
-                                           self.region.stop, hlgroup)
-        logger.debug('After highlight')
+        hlregion = HighlightRegion(self.region.doc_id, self.region.start,
+                                   self.region.stop, hlgroup)
+        self._unhighlight = highlight_func(hlregion)
 
     def _highlight_subregion(self, hlgroup, start_offset, stop_offset, highlight_func):
         '''Set the subregion of the sentence to the given highlight group.
 
-        `highlight_func(doc_id, start, stop, hlgroup)` is a function that highlights the
-        given region `(start, end)` of the given document `doc_id` and returns a function
-        that can withdraw the highlight.
+        `highlight_func(highlight_region)` is a function that highlights the
+        given region and return a callback that can withdraw the highlighted region.
         '''
         tomark = OffsetToMark(self.region)
 
@@ -128,4 +126,5 @@ class Sentence:
             return
         if self._unhighlight_subregion:
             self._unhighlight_subregion()
-        self._unhighlight_subregion = highlight_func(self.region.doc_id, start, stop, hlgroup)
+        hlregion = HighlightRegion(self.region.doc_id, start, stop, hlgroup)
+        self._unhighlight_subregion = highlight_func(hlregion)

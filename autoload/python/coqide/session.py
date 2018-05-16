@@ -47,31 +47,49 @@ class UICommandProxy:
         if self._ui_state.is_focused():
             self._proxied_ui_cmds.show_message(message, is_error)
 
+    def highlight(self, hlregion):
+        '''Save the highlighted region and update UI if the buffer is active.'''
+        if self._ui_state.is_active():
+            unhighlight = self._proxied_ui_cmds.highlight(hlregion)
+        else:
+            unhighlight = None
+        return self._ui_state.add_highlight_region(hlregion, unhighlight)
+
 
 class UIState:
     '''This class records the UI state of a Coq session, to be precise, the goals,
-    messages and other contents of the shared UI components.
+    messages and other contents of the UI components.
     '''
+
+    _EVENT_HANDLERS = {
+        'focus': '_on_focus',
+        'unfocus': '_on_unfocus',
+        'active': '_on_active',
+        'inactive': '_on_inactive',
+    }
 
     def __init__(self):
         '''Create an empty UIState.'''
         self._goals = None
         self._message = ('', False)
+        self._hl_map = {}
+        self._hl_next_index = 0
         self._focused = False
+        self._active = False
 
-    def focus_and_update(self, ui_cmds):
-        '''Focus the session (cursor in the window) and update the shared UI components.'''
-        self._focused = True
-        ui_cmds.show_goal(self._goals)
-        ui_cmds.show_message(self._message[0], self._message[1])
-
-    def unfocus_and_update(self, _):
-        '''Unfocus the session (cursor out of the window) and update the shared UI components.'''
-        self._focused = False
+    def handle_event(self, event, ui_cmds):
+        '''The event handler.'''
+        logger.debug('UIState handle event: %s', event)
+        handler = getattr(self, self._EVENT_HANDLERS[event])
+        handler(ui_cmds)
 
     def is_focused(self):
         '''Return True if the window is focused.'''
         return self._focused
+
+    def is_active(self):
+        '''Return True if the buffer is shown in some window.'''
+        return self._active
 
     def set_goals(self, goals):
         '''Set the goals.'''
@@ -80,6 +98,47 @@ class UIState:
     def set_message(self, message, is_error):
         '''Set the message.'''
         self._message = (message, is_error)
+
+    def add_highlight_region(self, hlregion, unhl):
+        ''''Add a highlight region and return the unhighlight callback.'''
+        hlobj = {'hlregion': hlregion, 'unhl': unhl}
+        hlindex = self._hl_next_index
+        self._hl_next_index += 1
+        self._hl_map[hlindex] = hlobj
+        return self._make_unhighlight(hlindex)
+
+    def _make_unhighlight(self, hlindex):
+        '''Return a function that remove the given highlight region.'''
+        def unhighlight():
+            '''Remove the highlight region.'''
+            hlobj = self._hl_map[hlindex]
+            if hlobj['unhl']:
+                hlobj['unhl']()
+            del self._hl_map[hlindex]
+        return unhighlight
+
+    def _on_focus(self, ui_cmds):
+        '''The handler for the event that the buffer window get focused.'''
+        self._focused = True
+        ui_cmds.show_goal(self._goals)
+        ui_cmds.show_message(self._message[0], self._message[1])
+
+    def _on_unfocus(self, _):
+        '''The handler for the event that the buffer window loses focus.'''
+        self._focused = False
+
+    def _on_active(self, ui_cmds):
+        '''The handler for the event that the buffer is shown in a window.'''
+        self._active = True
+        for item in self._hl_map.values():
+            item['unhl'] = ui_cmds.highlight(item['hlregion'])
+
+    def _on_inactive(self, _):
+        '''The handler for the event that the buffer is hidden from a window.'''
+        self._active = False
+        for item in self._hl_map.values():
+            item['unhl']()
+            item['unhl'] = None
 
 
 class Session:
@@ -113,13 +172,9 @@ class Session:
         '''Go backward to the sentence before `mark`.'''
         self._stm.backward_before_mark(mark, self._handle.call_async, self._proxy(ui_cmds))
 
-    def focus(self, ui_cmds):
-        '''Focus the session (cursor in this window).'''
-        self._ui_state.focus_and_update(ui_cmds)
-
-    def unfocus(self, ui_cmds):
-        '''Unfocus the session (cursor out of this window).'''
-        self._ui_state.unfocus_and_update(ui_cmds)
+    def handle_event(self, event, ui_cmds):
+        '''The event handler.'''
+        self._ui_state.handle_event(event, ui_cmds)
 
     def close(self):
         '''Close the session.'''

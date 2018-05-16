@@ -49,22 +49,42 @@ def find_buffer(bufnr):
 
 
 @contextlib.contextmanager
-def switch_buffer(bufnr):
-    '''Switch to `bufnr` temporarily.'''
+def preserve_window():
+    '''Switch back to the current window.'''
     saved_bufnr = vim.eval('bufnr("%")')
-    vim.command('hide buffer {}'.format(bufnr))
     try:
-        for buf in vim.buffers:
-            if buf.number == bufnr:
-                yield buf
-                break
+        yield
     finally:
-        vim.command('hide buffer {}'.format(saved_bufnr))
+        saved_winnr = vim.eval('bufwinnr({})'.format(saved_bufnr))
+        vim.command('{}wincmd w'.format(saved_winnr))
+
+
+@contextlib.contextmanager
+def switch_buffer(bufnr):
+    '''Switch to the window of `bufnr` temporarily.'''
+    for buf in vim.buffers:
+        if buf.number == bufnr:
+            target_buf = buf
+            break
+    else:
+        return
+
+    winnr = int(vim.eval('bufwinnr({})'.format(bufnr)))
+    cur_winnr = int(vim.eval('winnr()'))
+    if winnr == cur_winnr:
+        yield target_buf
+    else:
+        with preserve_window():
+            vim.command('{}wincmd w'.format(winnr))
+            yield target_buf
 
 
 def set_buffer_lines(bufnr, lines):
     '''Set the lines of the buffer.'''
     with switch_buffer(bufnr) as buf:
+        if not buf:
+            return
+
         saved_modif = vim.eval('&l:modifiable')
         vim.command('let &l:modifiable=1')
         try:
@@ -74,17 +94,6 @@ def set_buffer_lines(bufnr, lines):
                     break
         finally:
             vim.command('let &l:modifiable={}'.format(saved_modif))
-
-
-@contextlib.contextmanager
-def preserve_window():
-    '''Switch back to the current window.'''
-    saved_bufnr = vim.eval('bufnr("%")')
-    try:
-        yield
-    finally:
-        saved_winnr = vim.eval('bufwinnr({})'.format(saved_bufnr))
-        vim.command('{}wincmd w'.format(saved_winnr))
 
 
 class GoalWindow:
@@ -328,12 +337,12 @@ def in_session(func):
     '''A function decorator that passes the current session and buffer number
     as arguments to the decorated function.'''
     @functools.wraps(func)
-    def wrapped(self):                                   # pylint: disable=C0111
+    def wrapped(self, *args, **kwargs):                  # pylint: disable=C0111
         session, bufnr = self._get_current_session()     # pylint: disable=W0212
         if session is None:
             print('Not in Coq')
             return
-        func(self, session, bufnr)
+        func(self, session, bufnr, *args, **kwargs)
     return wrapped
 
 
@@ -428,8 +437,9 @@ class UICommandHandler:
         '''Update the content of the message window to `message`.'''
         self._pending_ui_cmds.append(lambda: self._message.show_message(message, is_error))
 
-    def highlight(self, doc_id, start, stop, hlgroup):
+    def highlight(self, hlregion):
         '''Set the hlgroup of a region in `doc_id`.'''
+        doc_id, start, stop, hlgroup = hlregion
         match_ids = []
 
         def highlight_cmd():
@@ -482,7 +492,7 @@ class VimUI:
         self._message.show(self._goal.bufnr())
         self._ui_cmds = UICommandHandler(self._goal, self._message)
         self._sessions = {}
-        self._focused_bufnr = None
+        self._last_focus_bufnr = None
 
     def new_session(self):
         '''Create a new session bound to the current buffer.'''
@@ -576,15 +586,18 @@ class VimUI:
             raise ValueError('Invalid visibility: {}'.format(visibility))
 
     @in_session
-    def focus(self, session, bufnr):
+    def handle_event(self, session, bufnr, event):
         '''The current buffer has got focus.'''
-        if bufnr != self._focused_bufnr:
-            if self._focused_bufnr in self._sessions:
-                logger.debug('Unfocus session [%s]', self._focused_bufnr)
-                self._sessions[self._focused_bufnr].unfocus(self._ui_cmds)
-            logger.debug('Focus session [%s]', bufnr)
-            self._focused_bufnr = bufnr
-            session.focus(self._ui_cmds)
+        if event == 'focus':
+            if self._last_focus_bufnr == bufnr:
+                return
+            if self._last_focus_bufnr in self._sessions:
+                last_session = self._sessions[self._last_focus_bufnr]
+                last_session.handle_event('unfocus', self._ui_cmds)
+            self._last_focus_bufnr = bufnr
+            session.handle_event('focus', self._ui_cmds)
+        else:
+            session.handle_event(event, self._ui_cmds)
 
     def update_ui(self):
         '''Update the UI events.'''
