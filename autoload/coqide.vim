@@ -9,10 +9,21 @@ import vim
 
 if not vim.eval('s:current_dir') in sys.path:
     sys.path.append(os.path.join(vim.eval('s:current_dir'), 'python'))
+
+import coqide
 EOF
 
-execute 'py3 logging.basicConfig(level="DEBUG", filename="/Users/tding/coqtop.log")'
-py3 import coqide
+if !exists('g:coqide_debug')
+    let g:coqide_debug = 0
+endif
+
+if !exists('g:coqide_debug_file')
+    let g:coqide_debug_file = 'coqide.log'
+endif
+
+if g:coqide_debug
+    execute 'py3 coqide.setup_debug_log("' . g:coqide_debug_file . '")'
+endif
 
 let s:activated = 0
 

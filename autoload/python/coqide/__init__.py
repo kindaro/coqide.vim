@@ -1,11 +1,13 @@
 '''The CoqIDE module.'''
 
-import logging
 
-logger = logging.getLogger(__name__)
-fh = logging.FileHandler('coqide.log', mode='w')
-logger.addHandler(fh)
-logger.setLevel(logging.DEBUG)
+def setup_debug_log(filename):
+    '''Setup the logger for the package.'''
+    import logging
+    logger = logging.getLogger(__name__)
+    filehandler = logging.FileHandler(filename, mode='a')
+    logger.addHandler(filehandler)
+    logger.setLevel(logging.DEBUG)
 
 
 def activate():
