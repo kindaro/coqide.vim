@@ -7,7 +7,6 @@ import contextlib
 import functools
 import itertools
 import logging
-import sys
 
 import vim                                                # pylint: disable=E0401
 
@@ -204,7 +203,7 @@ class MessageWindow:
         '''Return the buffer number.'''
         return self._bufnr
 
-    def show_message(self, message, error):
+    def show_message(self, message, _):
         '''Set the content of the message window.'''
         self._content = message.split('\n')
         if self._bufnr and is_buffer_active(self._bufnr):
@@ -591,7 +590,7 @@ class VimUI:
         '''Update the UI events.'''
         try:
             self._ui_cmds.update_ui()
-        except Exception:
+        except vim.error:
             logger.debug('Catched exception in update_ui', exc_info=True)
 
     def _get_current_session(self):
