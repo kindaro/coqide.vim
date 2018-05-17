@@ -463,38 +463,58 @@ class UICommandHandler:
     be cleared periodically in the Vim UI thread.
     '''
 
-    def __init__(self, goal, message):
+    def __init__(self, goal_window, message_window):
         '''Create the UI command handler.
-
-        `goal_bufnr` and `message_bufnr` are the numbers of the goal and message windows.
         '''
-        self._goal = goal
-        self._message = message
-        self._pending_ui_cmds = []
+        self._goal_window = goal_window
+        self._message_window = message_window
+
+        self._pending_goal = None
+        self._pending_message = None
+        self._pending_hl_actions = {}
+        self._next_hl_index = 0
+        self._pending_actions = []
 
     def update_ui(self):
         '''Run all the pending UI commands in the pending list.
 
         It must be called periodically in the Vim UI thread.'''
-        for cmd in self._pending_ui_cmds:
-            cmd()
-        self._pending_ui_cmds = []
+        goal = self._pending_goal
+        self._pending_goal = None
+        message = self._pending_message
+        self._pending_message = None
+        actions = list(self._pending_hl_actions.values())
+        self._pending_hl_actions = {}
+        actions.extend(self._pending_actions)
+        self._pending_actions = []
+
+        # During the Vim commands, the internal states may change.
+        if goal:
+            self._goal_window.show_goal(goal)
+        if message:
+            self._message_window.show_message(message[0], message[1])
+        for action in actions:
+            action()
 
     def show_goal(self, goals):
         '''Update the content of the goal window to `goals`.'''
-        self._pending_ui_cmds.append(lambda: self._goal.show_goal(goals))
+        self._pending_goal = goals
 
     def show_message(self, message, is_error):
         '''Update the content of the message window to `message`.'''
-        self._pending_ui_cmds.append(lambda: self._message.show_message(message, is_error))
+        self._pending_message = (message, is_error)
 
     def highlight(self, hlregion):
         '''Set the hlgroup of a region in `doc_id`.'''
-        doc_id, start, stop, hlgroup = hlregion
-        match_ids = []
+        hlindex = self._next_hl_index
+        self._next_hl_index += 1
 
-        def highlight_cmd():
+        match_ids = []
+        doc_id, start, stop, hlgroup = hlregion
+
+        def highlight_action():
             '''Highlight the region in the buffer whose id is `doc_id`.'''
+
             with switch_buffer(doc_id) as buf:
                 # Highlight line by line.
                 if start.line == stop.line:
@@ -519,21 +539,30 @@ class UICommandHandler:
                 match_ids.append(vim.eval(cmd))
                 match_args = []
 
-        def unhighlight():
+        def unhighlight_action():
             '''Unhighlight the region.'''
             with switch_buffer(doc_id) as _:
                 for match_id in match_ids:
                     vim.command('call matchdelete({})'.format(match_id))
 
-        self._pending_ui_cmds.append(highlight_cmd)
-        return lambda: self._pending_ui_cmds.append(unhighlight)
+        def remove_pending_or_unhighlight():
+            '''If the highlight action is still pending, remove it from the pending list.
+            Otherwise, add the unhighlight action to the pending list.'''
+
+            if hlindex in self._pending_hl_actions:
+                del self._pending_hl_actions[hlindex]
+            else:
+                self._pending_actions.append(unhighlight_action)
+
+        self._pending_hl_actions[hlindex] = highlight_action
+        return remove_pending_or_unhighlight
 
     def connection_lost(self):
         '''Notify the user that the connection to the coqtop process is lost.'''
-        def conn_lost_cmd():
+        def conn_lost_action():
             '''Notify the user that the connection is lost.'''
             vim.command('echom "{}"'.format('Coqtop subprocess quits unexpectedly.'))
-        self._pending_ui_cmds.append(conn_lost_cmd)
+        self._pending_actions.append(conn_lost_action)
 
 
 class VimUI:
@@ -548,6 +577,7 @@ class VimUI:
         self._ui_cmds = UICommandHandler(self._goal, self._message)
         self._sessions = {}
         self._last_focus_bufnr = None
+        self._count = 0
 
     def new_session(self):
         '''Create a new session bound to the current buffer.'''
@@ -657,7 +687,10 @@ class VimUI:
     def update_ui(self):
         '''Update the UI events.'''
         try:
+            logger.info('[%s] Start updating...', self._count)
             self._ui_cmds.update_ui()
+            logger.info('[%s] Finish updating...', self._count)
+            self._count += 1
         except vim.error:
             logger.debug('Catched exception in update_ui', exc_info=True)
 
