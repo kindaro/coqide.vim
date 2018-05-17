@@ -13,9 +13,9 @@
 "              2007 Nov 17 - Various minor bugfixes.
 "              2007 Nov 8 - Added keywords.
 "              2007 Nov 8 - Fixed some ill-highlighting in the type of declarations.
-"              2007 Nov 8 - Fixed pb with keywords ("\<...\>" had been forgotten) 
+"              2007 Nov 8 - Fixed pb with keywords ("\<...\>" had been forgotten)
 "                           (thanks to Vasileios Koutavas)
-"              2007 Nov 8 - Definition...Defined now works as expected, 
+"              2007 Nov 8 - Definition...Defined now works as expected,
 "                           fixed a bug with tactics that were not recognized,
 "                           fixed other bugs
 "              2007 Nov 7 - Complete refactoring, (much) more accurate highlighting. Much bigger file...
@@ -190,7 +190,7 @@ syn region coqTacNotationTerm contained contains=coqString,coqTactic,coqTacticKw
 syn keyword coqTacNotationKwd contained ident simple_intropattern hyp reference constr integer int_or_var tactic
 syn match   coqTacNotationKwd contained "at level"
 
-" Declarations 
+" Declarations
 syn region coqDecl       contains=coqIdent,coqDeclTerm,coqDeclBinder matchgroup=coqVernacCmd start="\<\%(Axiom\|Conjecture\|Hypothes[ie]s\|Parameters\?\|Variables\?\)\>" matchgroup=coqVernacCmd end="\.\_s" keepend
 syn region coqDeclBinder contained contains=coqIdent,coqDeclTerm matchgroup=coqVernacPunctuation start="(" end=")" keepend
 syn region coqDeclTerm   contained contains=@coqTerm matchgroup=coqVernacPunctuation start=":" end=")"
@@ -220,7 +220,7 @@ syn match   coqLtac contained "|-\|=>\|||\|\[\|\]\|\<_\>\||"
 syn region coqProofBody  contained contains=coqProofPunctuation,coqTactic,coqTacticKwd,coqProofComment,coqProofKwd,coqProofEnder,coqProofDelim,coqLtac matchgroup=coqVernacPunctuation start="\.\s" start="\.$" matchgroup=NONE end="\<\%(Qed\|Defined\|Admitted\|Abort\)\.\_s" end="\<Save\>.*\.\_s" keepend
 syn region coqProofDelim contained matchgroup=coqProofDelim start="\<Proof\>" matchgroup=coqProofDot end="\.\_s"
 syn region coqProofEnder contained matchgroup=coqProofDelim start="\<\%(Qed\|Defined\)\>" matchgroup=coqVernacPunctuation end="\.\_s"
-syn region coqProofEnder contained matchgroup=coqError start="\<\%(Abort\|Admitted\)\>" matchgroup=coqVernacPunctuation end="\.\_s"
+syn region coqProofEnder contained matchgroup=coqProofDelim start="\<\%(Abort\|Admitted\)\>" matchgroup=coqVernacPunctuation end="\.\_s"
 syn region coqProofEnder contained contains=coqIdent matchgroup=coqProofDelim start="\<Save\>" matchgroup=coqVernacPunctuation end="\.\_s"
 
 syn keyword coqTactic    contained absurd apply assert assumption auto
