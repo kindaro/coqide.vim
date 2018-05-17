@@ -120,7 +120,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
         [xp.AddedAxiom, '_on_added_axiom'],
     ]
 
-    def __init__(self, state_id_map, ui_cmds):
+    def __init__(self, state_id_map, ui_cmds, on_sentence_error):
         '''Create a feedback handler.
 
         The handler requires the property `state_id_map` of the STM object in a read-only manner.
@@ -128,6 +128,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
         '''
         self._state_id_map = state_id_map
         self._ui_cmds = ui_cmds
+        self._stm_on_sentence_error = on_sentence_error
 
     def __call__(self, feedback):
         '''Process the given feedback.
@@ -148,6 +149,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
         if sentence:
             sentence.set_error(error_msg.location, error_msg.message,
                                self._ui_cmds.highlight, self._ui_cmds.show_message)
+            self._stm_on_sentence_error()
         else:
             self._ui_cmds.show_message(error_msg.message, True)
 
@@ -157,6 +159,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
             if sentence:
                 sentence.set_error(message.location, message.message,
                                    self._ui_cmds.highlight, self._ui_cmds.show_message)
+                self._stm_on_sentence_error()
             else:
                 self._ui_cmds.show_message(message.message, True)
         else:
@@ -200,7 +203,7 @@ class STM:
 
     def make_feedback_handler(self, ui_cmds):
         '''Return an associated feedback handler.'''
-        return FeedbackHandler(self._state_id_map, ui_cmds)
+        return FeedbackHandler(self._state_id_map, ui_cmds, self._on_sentence_error)
 
     def init(self, call_async, ui_cmds):
         '''Initialize the state machine.'''
@@ -219,11 +222,17 @@ class STM:
 
     def forward(self, sregion, call_async, ui_cmds):
         '''Forward one sentence.'''
+        if self._sentences and self._sentences[-1].has_error():
+            logger.debug('STM last sentence has error, backward first')
+            return
         self._forward_one(sregion, call_async, ui_cmds)
         self._update_goal(call_async, ui_cmds)
 
     def forward_many(self, sregions, call_async, ui_cmds):
         '''The bulk call of `forward`.'''
+        if self._sentences and self._sentences[-1].has_error():
+            logger.debug('STM last sentence has error, backward first')
+            return
         for sregion in sregions:
             self._forward_one(sregion, call_async, ui_cmds)
         self._update_goal(call_async, ui_cmds)
@@ -333,8 +342,6 @@ class STM:
                     sentence.unhighlight()
                     del self._state_id_map[sentence.state_id]
                 del self._sentences[index:]
-            else:
-                raise RuntimeError('Edit_at should not fail: {}'.format(res.error))
 
         if index == 0:
             state_id = self._init_state_id
@@ -360,13 +367,6 @@ class STM:
                 res = xp.GoalRes.from_xml(xml)
                 if not res.error:
                     ui_cmds.show_goal(res.goals)
-                else:
-                    if res.error.state_id in self._state_id_map:
-                        sentence = self._state_id_map[res.error.state_id]
-                        sentence.show_error(res.error.location, res.error.message,
-                                            ui_cmds.highlight, ui_cmds.show_message)
-                    else:
-                        ui_cmds.show_message(res.error.message, True)
             call_async(xp.GoalReq(), on_res, self._make_on_lost_cb(done, ui_cmds))
         self._task_thread.schedule(task, 'get_goals')
 
@@ -383,3 +383,21 @@ class STM:
             self._state_id_map = {}
             ui_cmds.connection_lost()
         return callback
+
+    def _on_sentence_error(self):
+        '''Handle the feedback of sentence errors.
+
+        It removes all the sentences after the first error sentence.'''
+        self._task_thread.discard_scheduled_tasks()
+
+        for index, sentence in enumerate(self._sentences):
+            if sentence.has_error():
+                start_index = index + 1
+                break
+        else:
+            return
+
+        for sentence in self._sentences[start_index:]:
+            sentence.unhighlight()
+            del self._state_id_map[sentence.state_id]
+        del self._sentences[start_index:]

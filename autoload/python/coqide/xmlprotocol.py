@@ -306,7 +306,6 @@ class EditAtRes(namedtuple('EditAtRes', 'error')):
         assert xml.tag == 'value'
         if xml.attrib['val'] == 'good':
             content = _data_from_xml(xml[0])
-            assert isinstance(content, UnionL)
             return cls(None)
         return cls(ErrorValue.from_xml(xml))
 

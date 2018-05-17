@@ -52,7 +52,6 @@ class Sentence:
     PROCESSING = 'CoqStcProcessing'
     PROCESSED = 'CoqStcProcessed'
     ERROR = 'CoqStcError'
-    ERROR_AT = 'CoqStcErrorAt'
 
     def __init__(self, region, state_id):
         '''Create a new sentence with state INIT.'''
@@ -61,6 +60,7 @@ class Sentence:
         self._unhighlight = None
         self._unhighlight_subregion = None
         self._axiom_flag = False
+        self._error_flag = False
 
     def set_processing(self, highlight_func):
         '''Highlight the sentence to `PROCESSING`.'''
@@ -82,11 +82,19 @@ class Sentence:
 
     def set_error(self, location, message, highlight_func, show_message_func):
         '''Highlight the error in the sentence and show the error message.'''
-        self._highlight(Sentence.ERROR, highlight_func)
-        if location:
-            self._highlight_subregion(Sentence.ERROR_AT, location.start, location.stop,
+        self.unhighlight()
+
+        if location and location.start != location.stop:
+            self._highlight_subregion(Sentence.ERROR, location.start, location.stop,
                                       highlight_func)
+        else:
+            self._highlight(Sentence.ERROR, highlight_func)
         show_message_func(message, True)
+        self._error_flag = True
+
+    def has_error(self):
+        '''Return True of the sentence has error.'''
+        return self._error_flag
 
     def unhighlight(self):
         '''Unhighlight the sentence.'''
