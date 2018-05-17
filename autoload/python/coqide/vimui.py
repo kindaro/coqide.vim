@@ -144,13 +144,22 @@ class GoalWindow:
         '''Set the content of the goal window.'''
         content = []
         if goals is not None:
-            nr_bg = len(goals.background)
-            if nr_bg > 0:
-                content.append('This subproof is complete, but there are some unfocused goals:')
-                content.append('')
-
             nr_fg = len(goals.foreground)
-            if nr_fg > 0:
+            if nr_fg == 0:
+                total = 0
+                for goal_pair in goals.background:
+                    total += len(goal_pair[0]) + len(goal_pair[1])
+                if total > 0:
+                    content.append('This subproof is complete, but there are some unfocused goals:')
+                    content.append('')
+                    index = 1
+                    for goal_pair in goals.background:
+                        for goal in itertools.chain(goal_pair[0], goal_pair[1]):
+                            content.append('_______________________ ({}/{})'.format(index, total))
+                            content.append(goal.goal)
+                else:
+                    content.append('No more subgoals.')
+            else:
                 if nr_fg == 1:
                     content.append('1 subgoal')
                 else:
@@ -158,10 +167,8 @@ class GoalWindow:
                 for hyp in goals.foreground[0].hypotheses:
                     content.append(hyp)
                 for index, goal in enumerate(goals.foreground):
-                    content.append('__________________________ ({}/{})'.format(index + 1, nr_fg))
+                    content.append('_______________________ ({}/{})'.format(index + 1, nr_fg))
                     content.append(goal.goal)
-            elif nr_fg == 0 and nr_bg == 0:
-                content.append('No more subgoals.')
 
         self._content = content
         if self._bufnr and is_buffer_active(self._bufnr):
@@ -226,8 +233,11 @@ class SentenceEndMatcher:
     with a space like "... " or "...<EOL>" (EOL means the end of a line).
     '''
 
+    LEADING_SPACE = 0
+    '''The initial state.'''
+
     FREE = 1
-    '''The initial state. '''
+    '''The sentence. '''
 
     PRE_COMMENT = 2
     '''The state after matching a left parenthesis. Ex: aaa (^* aaa *)'''
@@ -250,7 +260,19 @@ class SentenceEndMatcher:
     PRE_ELLIPSIS_2 = 8
     '''The state of matching an ellipsis. Ex: aaa...^ aaa'''
 
-    FINAL = 9
+    MINUS = 9
+    '''The state of matching "-".'''
+
+    PLUS = 10
+    '''The state of matching "+".'''
+
+    TIMES = 11
+    '''The state of matching "*".'''
+
+    BRACKET = 12
+    '''The state of matching "{" or "}".'''
+
+    FINAL = 99
     '''The final state.'''
 
     OP_ENTER_COMMENT = 100
@@ -261,7 +283,21 @@ class SentenceEndMatcher:
     go to `FREE`. Otherwise, go to `COMMENT`.'''
 
     _TRANSITIONS = {
-        FREE : {
+        LEADING_SPACE: {
+            '(': PRE_COMMENT,
+            '.': PRE_DOT,
+            '"': STRING,
+            ' ': LEADING_SPACE,
+            '\t': LEADING_SPACE,
+            '\n': LEADING_SPACE,
+            '-': MINUS,
+            '+': PLUS,
+            '*': TIMES,
+            '{': BRACKET,
+            '}': BRACKET,
+            None: FREE,
+        },
+        FREE: {
             '(': PRE_COMMENT,
             '.': PRE_DOT,
             '"': STRING,
@@ -302,11 +338,26 @@ class SentenceEndMatcher:
             '\n': FINAL,
             None: FREE,
         },
+        MINUS: {
+            '-': MINUS,
+            None: FINAL,
+        },
+        PLUS: {
+            '+': PLUS,
+            None: FINAL,
+        },
+        TIMES: {
+            '*': TIMES,
+            None: FINAL,
+        },
+        BRACKET: {
+            None: FINAL,
+        },
     }
 
     def __init__(self):
         '''Create a matcher.'''
-        self._state = self.FREE
+        self._state = self.LEADING_SPACE
         self._nesting_level = 0
 
     def feed(self, char):
