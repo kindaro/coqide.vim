@@ -232,8 +232,11 @@ class STM:
         '''Go backward to the previous state.'''
         def task(done):
             '''Go backward to the previous state of the current state.'''
-            last = len(self._sentences) - 1
-            self._backward_before_index(last, done, call_async, ui_cmds)
+            if self._sentences:
+                last = len(self._sentences) - 1
+                self._backward_before_index(last, done, call_async, ui_cmds)
+            else:
+                done()
         self._task_thread.schedule(task, 'backward')
         self._update_goal(call_async, ui_cmds)
 
