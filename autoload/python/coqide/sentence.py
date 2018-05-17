@@ -62,34 +62,34 @@ class Sentence:
         self._axiom_flag = False
         self._error_flag = False
 
-    def set_processing(self, highlight_func):
+    def set_processing(self, ui_cmds):
         '''Highlight the sentence to `PROCESSING`.'''
-        self._highlight(self.PROCESSING, highlight_func)
+        self._highlight(self.PROCESSING, ui_cmds.highlight)
 
-    def set_processed(self, highlight_func):
+    def set_processed(self, ui_cmds):
         '''Highlight the sentence to `PROCESSED`.
 
         If `_axiom_flag` is set, the highlight remains `AXIOM` unchanged.
         '''
         if self._axiom_flag:
             return
-        self._highlight(self.PROCESSED, highlight_func)
+        self._highlight(self.PROCESSED, ui_cmds.highlight)
 
-    def set_axiom(self, highlight_func):
+    def set_axiom(self, ui_cmds):
         '''Highlight the sentence to `UNSAFE`.'''
         self._axiom_flag = True
-        self._highlight(self.AXIOM, highlight_func)
+        self._highlight(self.AXIOM, ui_cmds.highlight)
 
-    def set_error(self, location, message, highlight_func, show_message_func):
+    def set_error(self, location, message, ui_cmds):
         '''Highlight the error in the sentence and show the error message.'''
         self.unhighlight()
 
         if location and location.start != location.stop:
             self._highlight_subregion(Sentence.ERROR, location.start, location.stop,
-                                      highlight_func)
+                                      ui_cmds.highlight)
         else:
-            self._highlight(Sentence.ERROR, highlight_func)
-        show_message_func(message, True)
+            self._highlight(Sentence.ERROR, ui_cmds.highlight)
+        ui_cmds.show_message(message, True)
         self._error_flag = True
 
     def has_error(self):

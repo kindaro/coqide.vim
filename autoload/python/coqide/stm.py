@@ -147,8 +147,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
     def _on_error_msg(self, error_msg, sentence):
         '''Process ErrorMsg.'''
         if sentence:
-            sentence.set_error(error_msg.location, error_msg.message,
-                               self._ui_cmds.highlight, self._ui_cmds.show_message)
+            sentence.set_error(error_msg.location, error_msg.message, self._ui_cmds)
             self._stm_on_sentence_error()
         else:
             self._ui_cmds.show_message(error_msg.message, True)
@@ -157,8 +156,7 @@ class FeedbackHandler:                                # pylint: disable=R0903
         '''Process Message.'''
         if message.level == 'error':
             if sentence:
-                sentence.set_error(message.location, message.message,
-                                   self._ui_cmds.highlight, self._ui_cmds.show_message)
+                sentence.set_error(message.location, message.message, self._ui_cmds)
                 self._stm_on_sentence_error()
             else:
                 self._ui_cmds.show_message(message.message, True)
@@ -168,12 +166,12 @@ class FeedbackHandler:                                # pylint: disable=R0903
     def _on_processed(self, _, sentence):
         '''Highlight the sentence to "Processed" state.'''
         if sentence:
-            sentence.set_processed(self._ui_cmds.highlight)
+            sentence.set_processed(self._ui_cmds)
 
     def _on_added_axiom(self, _, sentence):
         '''Highlight the sentence to "Unsafe" state.'''
         if sentence:
-            sentence.set_axiom(self._ui_cmds.highlight)
+            sentence.set_axiom(self._ui_cmds)
 
 
 class STM:
@@ -301,14 +299,13 @@ class STM:
                     sentence = Sentence(sregion, state_id)
                     self._sentences.append(sentence)
                     self._state_id_map[state_id] = sentence
-                    sentence.set_processing(ui_cmds.highlight)
+                    sentence.set_processing(ui_cmds)
                     ui_cmds.show_message(res.message, False)
                 else:
                     self._task_thread.discard_scheduled_tasks()
                     sentence = Sentence(sregion, 0)
                     self._failed_sentence = sentence
-                    sentence.set_error(res.error.location, res.error.message,
-                                       ui_cmds.highlight, ui_cmds.show_message)
+                    sentence.set_error(res.error.location, res.error.message, ui_cmds)
 
             self._clear_failed_sentence()
             req = xp.AddReq(sregion.command, self._alloc_edit_id(),
