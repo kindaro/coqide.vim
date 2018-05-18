@@ -147,9 +147,9 @@ function! coqide#Setup()
     noremap <buffer> <f3> :CoqBackward<cr>
     noremap <buffer> <f4> :CoqToCursor<cr>
 
-    autocmd BufEnter <buffer> call coqide#HandleEvent('focus')
-    autocmd BufWinEnter <buffer> call coqide#HandleEvent('active')
-    autocmd BufWinLeave <buffer> call coqide#HandleEvent('inactive')
+    autocmd BufEnter <buffer> call coqide#HandleEvent('Focus')
+    autocmd BufWinEnter <buffer> call coqide#HandleEvent('Active')
+    autocmd BufWinLeave <buffer> call coqide#HandleEvent('Inactive')
 
     if g:coqide_auto_close_session == 'unload'
         autocmd BufUnload <buffer> CoqCloseSession

@@ -24,7 +24,7 @@ XML_DOCTYPE = '''<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
 logger = logging.getLogger(__name__)         # pylint: disable=C0103
 
 
-class XMLInputThread:
+class _XMLInputThread:
     '''A thread that receives data from a stream and parses them into XML.'''
 
     def __init__(self, stream, cb_data, cb_end):
@@ -42,7 +42,7 @@ class XMLInputThread:
                 if not chunk:
                     cb_end()
                     break
-                logger.debug('XMLInputThread receives: %s', chunk)
+                logger.debug('Receives: %s', chunk)
                 fragments.append(chunk.decode())
                 wrapped_doc = [XML_DOCTYPE, '<root>'] + fragments + ['</root>']
                 try:
@@ -52,11 +52,11 @@ class XMLInputThread:
                     fragments = []
                 except ET.ParseError:
                     pass
-            logger.debug('XMLInputThread quits normally.')
+            logger.debug('_XMLInputThread quits normally.')
 
         thread = threading.Thread(target=thread_main)
         thread.start()
-        logger.debug('XMLInputThread starts.')
+        logger.debug('_XMLInputThread starts.')
 
         self._thread = thread
 
@@ -65,7 +65,7 @@ class XMLInputThread:
         self._thread.join()
 
 
-class XMLOutputThread:
+class _XMLOutputThread:
     '''A thread that caches XML data in a queue and sends them to a stream in the
     background.
     '''
@@ -82,19 +82,19 @@ class XMLOutputThread:
                 if xml is None or self._closing:
                     break
                 data = ET.tostring(xml, encoding)
-                logger.debug('XMLOutputThread sends: %s', data)
+                logger.debug('Sends: %s', data)
 
                 try:
                     stream.write(data)
                     stream.flush()
                 except BrokenPipeError:
-                    logger.debug('XMLOutputThread quits by broken pipe.')
+                    logger.debug('_XMLOutputThread quits by broken pipe.')
                     break
-            logger.debug('XMLOutputThread quits normally.')
+            logger.debug('_XMLOutputThread quits normally.')
 
         thread = threading.Thread(target=thread_main)
         thread.start()
-        logger.debug('XMLOutputThread starts.')
+        logger.debug('_XMLOutputThread starts.')
 
         self._queue = out_queue
         self._thread = thread
@@ -116,7 +116,7 @@ class XMLOutputThread:
         self._thread.join()
 
 
-def coqtop_process_create():
+def _coqtop_process_create():
     '''Create a Popen object of the coqtop program.'''
     command = ['coqtop',
                '-ideslave',
@@ -145,9 +145,9 @@ class CoqtopHandle:
         process. `cb_feedback` is executed in a background thread, so do not
         communicate with Vim in it.
         '''
-        process = coqtop_process_create()
-        input_thread = XMLInputThread(process.stdout, self._on_receive, self._on_lost)
-        output_thread = XMLOutputThread(process.stdin, encoding)
+        process = _coqtop_process_create()
+        input_thread = _XMLInputThread(process.stdout, self._on_receive, self._on_lost)
+        output_thread = _XMLOutputThread(process.stdin, encoding)
 
         self._process = process
         self._input_thread = input_thread

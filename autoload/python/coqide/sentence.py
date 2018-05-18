@@ -7,13 +7,14 @@ ending with dots, ellipses or "-+*" and brackets.
 from collections import namedtuple
 import logging
 
+from . import actions
+
 
 logger = logging.getLogger(__name__)           # pylint: disable=C0103
 
 
 Mark = namedtuple('Mark', 'line col')
-SentenceRegion = namedtuple('SentenceRegion', 'doc_id start stop command')
-HighlightRegion = namedtuple('HighlightRegion', 'doc_id start stop hlgroup')
+SentenceRegion = namedtuple('SentenceRegion', 'bufnr start stop command')
 
 
 class OffsetToMark:
@@ -57,66 +58,63 @@ class Sentence:
         '''Create a new sentence with state INIT.'''
         self.region = region
         self.state_id = state_id
-        self._unhighlight = None
-        self._unhighlight_subregion = None
+        self._hlid = None
         self._axiom_flag = False
         self._error_flag = False
+        self._hlcount = 0
 
-    def set_processing(self, ui_cmds):
+    def set_processing(self, handle_action):
         '''Highlight the sentence to `PROCESSING`.'''
-        self._highlight(self.PROCESSING, ui_cmds.highlight)
+        self._highlight(self.PROCESSING, handle_action)
 
-    def set_processed(self, ui_cmds):
+    def set_processed(self, handle_action):
         '''Highlight the sentence to `PROCESSED`.
 
         If `_axiom_flag` is set, the highlight remains `AXIOM` unchanged.
         '''
-        if self._axiom_flag:
+        if self._axiom_flag or self._error_flag:
             return
-        self._highlight(self.PROCESSED, ui_cmds.highlight)
+        self._highlight(self.PROCESSED, handle_action)
 
-    def set_axiom(self, ui_cmds):
+    def set_axiom(self, handle_action):
         '''Highlight the sentence to `UNSAFE`.'''
+        self._highlight(self.AXIOM, handle_action)
         self._axiom_flag = True
-        self._highlight(self.AXIOM, ui_cmds.highlight)
 
-    def set_error(self, location, message, ui_cmds):
+    def set_error(self, location, message, handle_action):
         '''Highlight the error in the sentence and show the error message.'''
-        self.unhighlight()
+        self.unhighlight(handle_action)
 
         if location and location.start != location.stop:
-            self._highlight_subregion(Sentence.ERROR, location.start, location.stop,
-                                      ui_cmds.highlight)
+            self._highlight_sub(Sentence.ERROR, location.start, location.stop, handle_action)
         else:
-            self._highlight(Sentence.ERROR, ui_cmds.highlight)
-        ui_cmds.show_message(message, True)
+            self._highlight(Sentence.ERROR, handle_action)
+
+        handle_action(actions.ShowMessage(message, 'error'))
         self._error_flag = True
 
     def has_error(self):
         '''Return True of the sentence has error.'''
         return self._error_flag
 
-    def unhighlight(self):
+    def unhighlight(self, handle_action):
         '''Unhighlight the sentence.'''
-        if self._unhighlight:
-            self._unhighlight()
-            self._unhighlight = None
+        if self._hlid:
+            logger.debug('Sentence unhighlight: %s', self._hlid)
+            handle_action(actions.UnhlRegion(*self._hlid))
+            self._hlid = None
+            self._axiom_flag = False
+            self._error_flag = False
 
-        if self._unhighlight_subregion:
-            self._unhighlight_subregion()
-            self._unhighlight_subregion = None
-
-        self._axiom_flag = False
-
-    def _highlight(self, hlgroup, highlight_func):
+    def _highlight(self, hlgroup, handle_action):
         '''Highlight the whole sentence to the given highlight group.'''
-        if self._unhighlight:
-            self._unhighlight()
-        hlregion = HighlightRegion(self.region.doc_id, self.region.start,
-                                   self.region.stop, hlgroup)
-        self._unhighlight = highlight_func(hlregion)
+        self.unhighlight(handle_action)
+        self._hlid = (self.region.bufnr, self.region.start, self.region.stop, self._hlcount)
+        self._hlcount += 1
+        logger.debug('Sentence highlight: %s %s', self._hlid, hlgroup)
+        handle_action(actions.HlRegion(*self._hlid, hlgroup=hlgroup))
 
-    def _highlight_subregion(self, hlgroup, start_offset, stop_offset, highlight_func):
+    def _highlight_sub(self, hlgroup, start_offset, stop_offset, handle_action):
         '''Set the subregion of the sentence to the given highlight group.
 
         `highlight_func(highlight_region)` is a function that highlights the
@@ -132,7 +130,8 @@ class Sentence:
 
         if start == stop:
             return
-        if self._unhighlight_subregion:
-            self._unhighlight_subregion()
-        hlregion = HighlightRegion(self.region.doc_id, start, stop, hlgroup)
-        self._unhighlight_subregion = highlight_func(hlregion)
+
+        self.unhighlight(handle_action)
+        self._hlid = (self.region.bufnr, start, stop, self._hlcount)
+        self._hlcount += 1
+        handle_action(actions.HlRegion(*self._hlid, hlgroup=hlgroup))

@@ -12,13 +12,14 @@ import queue
 import threading
 
 from . import xmlprotocol as xp
+from . import actions
 from .sentence import Sentence, Mark
 
 
 logger = logging.getLogger(__name__)        # pylint: disable=C0103
 
 
-class SequentialTaskThread:
+class _SequentialTaskThread:
     '''A thread that executes the tasks in the order that they are emitted.
 
     Another task must be executed only after one task has already been done.
@@ -46,16 +47,16 @@ class SequentialTaskThread:
                 task, name = schedule_queue.get()
                 if task is None or self._closing:
                     break
-                logger.debug('SequentialTaskThread runs task: %s ...', name)
+                logger.debug('Runs task: %s ...', name)
                 task(done)
                 task_done.acquire()
                 self._scheduled_task_count -= 1
-                logger.debug('SequentialTaskThread gets task done: %s.', name)
-            logger.debug('SequentialTaskThread quits normally.')
+                logger.debug('Finish task: %s.', name)
+            logger.debug('_SequentialTaskThread quits normally.')
 
         thread = threading.Thread(target=thread_main)
         thread.start()
-        logger.debug('SequentialTaskThread starts.')
+        logger.debug('_SequentialTaskThread starts.')
 
         self._schedule_queue = schedule_queue
         self._thread = thread
@@ -96,7 +97,7 @@ class SequentialTaskThread:
         return self._scheduled_task_count
 
 
-def finally_call(cleanup):
+def _finally_call(cleanup):
     '''A function decorator that call `cleanup` on the exit of the decorated function
     no matter what.'''
     def wrapper(func):                  # pylint: disable=C0111
@@ -110,7 +111,7 @@ def finally_call(cleanup):
     return wrapper
 
 
-class FeedbackHandler:                                # pylint: disable=R0903
+class _FeedbackHandler:                                # pylint: disable=R0903
     '''A functional that handles the feedbacks.'''
 
     _FEEDBACK_HANDLERS = [
@@ -120,15 +121,14 @@ class FeedbackHandler:                                # pylint: disable=R0903
         [xp.AddedAxiom, '_on_added_axiom'],
     ]
 
-    def __init__(self, state_id_map, ui_cmds, on_sentence_error):
+    def __init__(self, state_id_map, handle_action, handle_sentence_error):
         '''Create a feedback handler.
 
         The handler requires the property `state_id_map` of the STM object in a read-only manner.
-        It uses `ui_cmds` to display the feedbacks.
         '''
         self._state_id_map = state_id_map
-        self._ui_cmds = ui_cmds
-        self._stm_on_sentence_error = on_sentence_error
+        self._handle_action = handle_action
+        self._handle_sentence_error = handle_sentence_error
 
     def __call__(self, feedback):
         '''Process the given feedback.
@@ -147,67 +147,60 @@ class FeedbackHandler:                                # pylint: disable=R0903
     def _on_error_msg(self, error_msg, sentence):
         '''Process ErrorMsg.'''
         if sentence:
-            sentence.set_error(error_msg.location, error_msg.message, self._ui_cmds)
-            self._stm_on_sentence_error()
+            sentence.set_error(error_msg.location, error_msg.message, self._handle_action)
+            self._handle_sentence_error(self._handle_action)
         else:
-            self._ui_cmds.show_message(error_msg.message, True)
+            self._handle_action(actions.ShowMessage(error_msg.message, 'error'))
 
     def _on_message(self, message, sentence):
         '''Process Message.'''
         if message.level == 'error':
             if sentence:
-                sentence.set_error(message.location, message.message, self._ui_cmds)
-                self._stm_on_sentence_error()
+                sentence.set_error(message.location, message.message, self._handle_action)
+                self._handle_sentence_error(self._handle_action)
             else:
-                self._ui_cmds.show_message(message.message, True)
+                self._handle_action(actions.ShowMessage(message.message, 'error'))
         else:
-            self._ui_cmds.show_message(message.message, False)
+            self._handle_action(actions.ShowMessage(message.message, message.level))
 
     def _on_processed(self, _, sentence):
         '''Highlight the sentence to "Processed" state.'''
         if sentence:
-            sentence.set_processed(self._ui_cmds)
+            sentence.set_processed(self._handle_action)
 
     def _on_added_axiom(self, _, sentence):
         '''Highlight the sentence to "Unsafe" state.'''
         if sentence:
-            sentence.set_axiom(self._ui_cmds)
+            sentence.set_axiom(self._handle_action)
 
 
 class STM:
     '''A STM records the execution state of a Coq document.
 
-    Compared to a whole document, it cares about only forwarding and backwarding.
-
-    The methods defined in this class usually requires two special parameters:
-
-    - `call_async`: a function that communicates with the coqtop process
-    - `ui_cmds`: an object that provides UI update operations, including:
-      + `show_message`: show the message in the message panel
-      + `show_goal`: show the goal in the goal panel
-      + `highlight`: highlight the given region
-      + `connection_lost`: notify that the connection to the coqtop process is lost
+    It cares about only forwarding and backwarding.
     '''
 
-    def __init__(self):
+    def __init__(self, bufnr):
         '''Create a empty state machine.
-        '''
-        self._next_edit_id = -1
+
+        `bufnr` is the number of the related buffer. It never directly uses `bufnr`, only as an
+        identifier to make UI actions.'''
         self._sentences = []
         self._state_id_map = {}
         self._failed_sentence = None
         self._init_state_id = None
-        self._task_thread = SequentialTaskThread()
+        self._task_thread = _SequentialTaskThread()
+        self._bufnr = bufnr
 
-    def make_feedback_handler(self, ui_cmds):
+    def make_feedback_handler(self, handle_action):
         '''Return an associated feedback handler.'''
-        return FeedbackHandler(self._state_id_map, ui_cmds, self._on_sentence_error)
+        return _FeedbackHandler(self._state_id_map, handle_action, self._on_sentence_error)
 
-    def init(self, call_async, ui_cmds):
+    def init(self, call_async, handle_action):
         '''Initialize the state machine.'''
         def task(done):
             '''Send Init call.'''
-            @finally_call(done)
+            @_finally_call(done)
             def on_res(xml):
                 '''Process the Init response.'''
                 res = xp.InitRes.from_xml(xml)
@@ -215,39 +208,39 @@ class STM:
                     self._init_state_id = res.init_state_id
                 else:
                     raise RuntimeError(res.error.message)
-            call_async(xp.InitReq(), on_res, self._make_on_lost_cb(done, ui_cmds))
+            call_async(xp.InitReq(), on_res, self._make_on_lost_cb(done, handle_action))
         self._task_thread.schedule(task, 'init')
 
-    def forward(self, sregion, call_async, ui_cmds):
+    def forward(self, sregion, call_async, handle_action):
         '''Forward one sentence.'''
         if self._sentences and self._sentences[-1].has_error():
-            logger.debug('STM last sentence has error, backward first')
+            handle_action(actions.ShowMessage('Fix the error first', 'error'))
             return
-        self._forward_one(sregion, call_async, ui_cmds)
-        self._update_goal(call_async, ui_cmds)
+        self._forward_one(sregion, call_async, handle_action)
+        self._update_goal(call_async, handle_action)
 
-    def forward_many(self, sregions, call_async, ui_cmds):
+    def forward_many(self, sregions, call_async, handle_action):
         '''The bulk call of `forward`.'''
         if self._sentences and self._sentences[-1].has_error():
-            logger.debug('STM last sentence has error, backward first')
+            handle_action(actions.ShowMessage('Fix the error first.', 'error'))
             return
         for sregion in sregions:
-            self._forward_one(sregion, call_async, ui_cmds)
-        self._update_goal(call_async, ui_cmds)
+            self._forward_one(sregion, call_async, handle_action)
+        self._update_goal(call_async, handle_action)
 
-    def backward(self, call_async, ui_cmds):
+    def backward(self, call_async, handle_action):
         '''Go backward to the previous state.'''
         def task(done):
             '''Go backward to the previous state of the current state.'''
             if self._sentences:
                 last = len(self._sentences) - 1
-                self._backward_before_index(last, done, call_async, ui_cmds)
+                self._backward_before_index(last, done, call_async, handle_action)
             else:
                 done()
         self._task_thread.schedule(task, 'backward')
-        self._update_goal(call_async, ui_cmds)
+        self._update_goal(call_async, handle_action)
 
-    def backward_before_mark(self, mark, call_async, ui_cmds):
+    def backward_before_mark(self, mark, call_async, handle_action):
         '''Go backward to the sentence before the given mark.'''
         def task(done):
             '''Find the sentence and go backward.'''
@@ -255,12 +248,12 @@ class STM:
                 stop = sentence.region.stop
                 if stop.line > mark.line or \
                         (stop.line == mark.line and stop.col > mark.col):
-                    self._backward_before_index(i, done, call_async, ui_cmds)
+                    self._backward_before_index(i, done, call_async, handle_action)
                     break
             else:
                 done()
         self._task_thread.schedule(task, 'backward_before_mark')
-        self._update_goal(call_async, ui_cmds)
+        self._update_goal(call_async, handle_action)
 
     def get_last_stop(self):
         '''Return the stop of the last sentence.'''
@@ -274,23 +267,19 @@ class STM:
         logger.debug('STM scheduled task count: %s', count)
         return count > 0
 
-    def close(self):
+    def close(self, handle_action):
         '''Close and clean up the state machine.'''
         self._task_thread.shutdown_join()
         for sentence in self._sentences:
-            sentence.unhighlight()
+            sentence.unhighlight(handle_action)
         self._sentences = []
         self._state_id_map = {}
 
-    def _forward_one(self, sregion, call_async, ui_cmds):
-        '''Accept a new sentence region and go forward.
-
-        `call_async` is provided by `CoqtopHandle`.
-        `highlight` is the UI highlighting function.
-        '''
+    def _forward_one(self, sregion, call_async, handle_action):
+        '''Accept a new sentence region and go forward.'''
         def task(done):
             '''Send Add call.'''
-            @finally_call(done)
+            @_finally_call(done)
             def on_res(xml):
                 '''Process the Add response.'''
                 res = xp.AddRes.from_xml(xml)
@@ -299,24 +288,23 @@ class STM:
                     sentence = Sentence(sregion, state_id)
                     self._sentences.append(sentence)
                     self._state_id_map[state_id] = sentence
-                    sentence.set_processing(ui_cmds)
-                    ui_cmds.show_message(res.message, False)
+                    sentence.set_processing(handle_action)
+                    handle_action(actions.ShowMessage(res.message, 'info'))
                 else:
                     self._task_thread.discard_scheduled_tasks()
                     sentence = Sentence(sregion, 0)
                     self._failed_sentence = sentence
-                    sentence.set_error(res.error.location, res.error.message, ui_cmds)
+                    sentence.set_error(res.error.location, res.error.message, handle_action)
 
-            self._clear_failed_sentence()
-            req = xp.AddReq(sregion.command, self._alloc_edit_id(),
-                            self._tip_state_id(), False)
-            call_async(req, on_res, self._make_on_lost_cb(done, ui_cmds))
+            self._clear_failed_sentence(handle_action)
+            req = xp.AddReq(sregion.command, -1, self._tip_state_id(), False)
+            call_async(req, on_res, self._make_on_lost_cb(done, handle_action))
         self._task_thread.schedule(task, 'forward_one')
 
-    def _clear_failed_sentence(self):
+    def _clear_failed_sentence(self, handle_action):
         '''Clear the highlighting of the last sentence that cannot be added.'''
         if self._failed_sentence:
-            self._failed_sentence.unhighlight()
+            self._failed_sentence.unhighlight(handle_action)
             self._failed_sentence = None
 
     def _tip_state_id(self):
@@ -325,18 +313,18 @@ class STM:
             return self._sentences[-1].state_id
         return self._init_state_id
 
-    def _backward_before_index(self, index, done, call_async, ui_cmds):
+    def _backward_before_index(self, index, done, call_async, handle_action):
         '''Go backward to the state of `self._sentences[index - 1]`.
 
         If `index == 0`, go to the initial state.
         '''
-        @finally_call(done)
+        @_finally_call(done)
         def on_res(xml):
             '''Process EditAt response and remove the trailing sentences.'''
             res = xp.EditAtRes.from_xml(xml)
             if not res.error:
                 for sentence in self._sentences[index:]:
-                    sentence.unhighlight()
+                    sentence.unhighlight(handle_action)
                     del self._state_id_map[sentence.state_id]
                 del self._sentences[index:]
 
@@ -344,44 +332,38 @@ class STM:
             state_id = self._init_state_id
         else:
             state_id = self._sentences[index - 1].state_id
-        self._clear_failed_sentence()
+        self._clear_failed_sentence(handle_action)
         req = xp.EditAtReq(state_id)
-        call_async(req, on_res, self._make_on_lost_cb(done, ui_cmds))
+        call_async(req, on_res, self._make_on_lost_cb(done, handle_action))
 
-    def _alloc_edit_id(self):
-        '''Return next fresh edit id.'''
-        value = self._next_edit_id
-        self._next_edit_id -= 1
-        return value
-
-    def _update_goal(self, call_async, ui_cmds):
+    def _update_goal(self, call_async, handle_action):
         '''Update the goals.'''
         def task(done):
             '''Send Goal call.'''
-            @finally_call(done)
+            @_finally_call(done)
             def on_res(xml):
                 '''Process the Goal response.'''
                 res = xp.GoalRes.from_xml(xml)
                 if not res.error:
-                    ui_cmds.show_goal(res.goals)
-            call_async(xp.GoalReq(), on_res, self._make_on_lost_cb(done, ui_cmds))
+                    handle_action(actions.ShowGoals(res.goals))
+            call_async(xp.GoalReq(), on_res, self._make_on_lost_cb(done, handle_action))
         self._task_thread.schedule(task, 'get_goals')
 
-    def _make_on_lost_cb(self, done, ui_cmds):
+    def _make_on_lost_cb(self, done, handle_action):
         '''Return an on-connection-lost callback that notifies the UI and discards all the schedule
         tasks.'''
-        @finally_call(done)
+        @_finally_call(done)
         def callback():
             '''Process the connection lost event.'''
             self._task_thread.discard_scheduled_tasks()
             for sentence in self._sentences:
-                sentence.unhighlight()
+                sentence.unhighlight(handle_action)
             self._sentences = []
             self._state_id_map = {}
-            ui_cmds.connection_lost()
+            handle_action(actions.ConnLost(self._bufnr))
         return callback
 
-    def _on_sentence_error(self):
+    def _on_sentence_error(self, handle_action):
         '''Handle the feedback of sentence errors.
 
         It removes all the sentences after the first error sentence.'''
@@ -395,6 +377,6 @@ class STM:
             return
 
         for sentence in self._sentences[start_index:]:
-            sentence.unhighlight()
+            sentence.unhighlight(handle_action)
             del self._state_id_map[sentence.state_id]
         del self._sentences[start_index:]

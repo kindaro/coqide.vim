@@ -6,10 +6,14 @@ In this module defines Session, representing a Coq file that is being edited.
 import logging
 
 
+from . import actions
+from . import events
+
+
 logger = logging.getLogger(__name__)     # pylint: disable=C0103
 
 
-def chain_feedback_handlers(handlers):
+def _chain_feedback_handlers(handlers):
     '''Chain `handlers` into one feedback handler.'''
     def chained_handler(feedback):
         '''The chained feedback handler.'''
@@ -20,68 +24,67 @@ def chain_feedback_handlers(handlers):
     return chained_handler
 
 
-class UICommandProxy:
-    '''This class catches the UI update commands and update the bound UIState object.
+class _ActionProxy(actions.ActionHandlerBase):                 # pylint: disable=R0903
+    '''This class proxies the actions to the upper handler and the internal handler.
 
-    Some UI commands that updates the contents of the shared UI components like the goal and message
-    window are sent to UI only when the session is focused.
+    It propagates the actions to the upper handler in accord with the focus and active
+    status of the corresponding buffer. "Focus" means the cursor is in the buffer.
+    "Active" means the buffer is present in some window.
+
+    Actions that will not be propagated to the upper handler if buffer unfocus:
+    - ShowGoals
+    - ShowMessage
+
+    Actions that will not be propated to the upper handler if buffer inactive:
+    - HlRegion
+    - UnhlRegion
     '''
 
-    def __init__(self, ui_state, proxied_ui_cmds):
-        self._ui_state = ui_state
-        self._proxied_ui_cmds = proxied_ui_cmds
+    def __init__(self, is_focused, is_active, handle_internally, handle_in_upper):
+        self._is_focused = is_focused
+        self._is_active = is_active
+        self._handle_internally = handle_internally
+        self._handle_in_upper = handle_in_upper
 
-    def __getattr__(self, name):
-        '''The default behavior is to call the original command unless being proxied.'''
-        return getattr(self._proxied_ui_cmds, name)
+    def _on_show_goals(self, action):
+        self._handle_internally(action)
+        if self._is_focused():
+            self._handle_in_upper(action)
 
-    def show_goal(self, goals):
-        '''Update UI if focused. Save the goals always.'''
-        self._ui_state.set_goals(goals)
-        if self._ui_state.is_focused():
-            self._proxied_ui_cmds.show_goal(goals)
+    def _on_show_message(self, action):
+        self._handle_internally(action)
+        if self._is_focused():
+            self._handle_in_upper(action)
 
-    def show_message(self, message, is_error):
-        '''Update UI if focused. Save the message always.'''
-        self._ui_state.set_message(message, is_error)
-        if self._ui_state.is_focused():
-            self._proxied_ui_cmds.show_message(message, is_error)
+    def _on_hl_region(self, action):
+        self._handle_internally(action)
+        if self._is_active():
+            self._handle_in_upper(action)
 
-    def highlight(self, hlregion):
-        '''Save the highlighted region and update UI if the buffer is active.'''
-        if self._ui_state.is_active():
-            unhighlight = self._proxied_ui_cmds.highlight(hlregion)
-        else:
-            unhighlight = None
-        return self._ui_state.add_highlight_region(hlregion, unhighlight)
+    def _on_unhl_region(self, action):
+        self._handle_internally(action)
+        if self._is_active():
+            self._handle_in_upper(action)
+
+    def _on_conn_lost(self, action):
+        self._handle_internally(action)
+        self._handle_in_upper(action)
 
 
-class UIState:
-    '''This class records the UI state of a Coq session, to be precise, the goals,
-    messages and other contents of the UI components.
+class _InternalUI(actions.ActionHandlerBase, events.EventHandlerBase):
+    '''This class records the UI state of a Coq session.
+
+    It may be or may be not in synchronization with the UI state of Vim depending on the focus and
+    active state of the corresponding buffer.
     '''
-
-    _EVENT_HANDLERS = {
-        'focus': '_on_focus',
-        'unfocus': '_on_unfocus',
-        'active': '_on_active',
-        'inactive': '_on_inactive',
-    }
 
     def __init__(self):
-        '''Create an empty UIState.'''
+        '''Create an empty UI.'''
         self._goals = None
-        self._message = ('', False)
+        self._message = ('', 'info')
         self._hl_map = {}
-        self._hl_next_index = 0
         self._focused = False
         self._active = False
-
-    def handle_event(self, event, ui_cmds):
-        '''The event handler.'''
-        logger.debug('UIState handle event: %s', event)
-        handler = getattr(self, self._EVENT_HANDLERS[event])
-        handler(ui_cmds)
 
     def is_focused(self):
         '''Return True if the window is focused.'''
@@ -91,96 +94,89 @@ class UIState:
         '''Return True if the buffer is shown in some window.'''
         return self._active
 
-    def set_goals(self, goals):
-        '''Set the goals.'''
-        self._goals = goals
+    def _on_show_goals(self, action):
+        self._goals = action.goals
 
-    def set_message(self, message, is_error):
-        '''Set the message.'''
-        self._message = (message, is_error)
+    def _on_show_message(self, action):
+        self._message = (action.message, action.level)
 
-    def add_highlight_region(self, hlregion, unhl):
-        ''''Add a highlight region and return the unhighlight callback.'''
-        hlobj = {'hlregion': hlregion, 'unhl': unhl}
-        hlindex = self._hl_next_index
-        self._hl_next_index += 1
-        self._hl_map[hlindex] = hlobj
-        return self._make_unhighlight(hlindex)
+    def _on_hl_region(self, action):
+        hlid = (action.bufnr, action.start, action.stop, action.token)
+        self._hl_map[hlid] = action.hlgroup
 
-    def _make_unhighlight(self, hlindex):
-        '''Return a function that remove the given highlight region.'''
-        def unhighlight():
-            '''Remove the highlight region.'''
-            hlobj = self._hl_map[hlindex]
-            if hlobj['unhl']:
-                hlobj['unhl']()
-            del self._hl_map[hlindex]
-        return unhighlight
+    def _on_unhl_region(self, action):
+        hlid = (action.bufnr, action.start, action.stop, action.token)
+        del self._hl_map[hlid]
 
-    def _on_focus(self, ui_cmds):
-        '''The handler for the event that the buffer window get focused.'''
+    def _on_conn_lost(self, _):
+        pass
+
+    def _on_focus(self, _, handle_action):
         self._focused = True
-        ui_cmds.show_goal(self._goals)
-        ui_cmds.show_message(self._message[0], self._message[1])
+        handle_action(actions.ShowGoals(self._goals))
+        handle_action(actions.ShowMessage(*self._message))
 
-    def _on_unfocus(self, _):
-        '''The handler for the event that the buffer window loses focus.'''
+    def _on_unfocus(self, _1, _2):
         self._focused = False
 
-    def _on_active(self, ui_cmds):
-        '''The handler for the event that the buffer is shown in a window.'''
+    def _on_active(self, _, handle_action):
         self._active = True
-        for item in self._hl_map.values():
-            item['unhl'] = ui_cmds.highlight(item['hlregion'])
+        for hlid, hlgroup in self._hl_map.items():
+            handle_action(actions.HlRegion(*hlid, hlgroup=hlgroup))
 
-    def _on_inactive(self, _):
-        '''The handler for the event that the buffer is hidden from a window.'''
+    def _on_inactive(self, _, handle_action):
         self._active = False
-        for item in self._hl_map.values():
-            item['unhl']()
-            item['unhl'] = None
+        for hlid in self._hl_map:
+            handle_action(actions.UnhlRegion(*hlid))
 
 
 class Session:
     '''A Coq file that is being edited.'''
 
-    def __init__(self, make_stm, make_coqtop_handle, ui_cmds):
-        '''Create a new Coq session.'''
-        self._ui_state = UIState()
+    def __init__(self, make_stm, make_coqtop_handle, feedback_handle_action):
+        '''Create a new Coq session.
+
+        `bufnr` is the number of the corresponding buffer. It is not used directly,
+        only as an identifier for actions.
+        '''
+        self._internal_ui = _InternalUI()
 
         stm = make_stm()
-        stm_fb_handler = stm.make_feedback_handler(self._proxy(ui_cmds))
-        fb_handler = chain_feedback_handlers([stm_fb_handler])
-        handle = make_coqtop_handle('utf-8', fb_handler)
-        stm.init(handle.call_async, ui_cmds)
+        stm_fb_handler = stm.make_feedback_handler(self._proxy(feedback_handle_action))
+        fb_handler = _chain_feedback_handlers([stm_fb_handler])
+        coqtop = make_coqtop_handle(fb_handler)
 
         self._stm = stm
-        self._handle = handle
+        self._coqtop = coqtop
 
-    def forward(self, sregion, ui_cmds):
+    def init(self, handle_action):
+        '''Initialize the STM.'''
+        self._stm.init(self._coqtop.call_async, handle_action)
+
+    def forward(self, sregion, handle_action):
         '''Process a new sentence region and go forward.'''
-        self._stm.forward(sregion, self._handle.call_async, self._proxy(ui_cmds))
+        self._stm.forward(sregion, self._coqtop.call_async, self._proxy(handle_action))
 
-    def forward_many(self, sregions, ui_cmds):
+    def forward_many(self, sregions, handle_action):
         '''Process a list of new sentence regions and go forward.'''
-        self._stm.forward_many(sregions, self._handle.call_async, self._proxy(ui_cmds))
+        self._stm.forward_many(sregions, self._coqtop.call_async, self._proxy(handle_action))
 
-    def backward(self, ui_cmds):
+    def backward(self, handle_action):
         '''Go backward one sentence.'''
-        self._stm.backward(self._handle.call_async, self._proxy(ui_cmds))
+        self._stm.backward(self._coqtop.call_async, self._proxy(handle_action))
 
-    def backward_before_mark(self, mark, ui_cmds):
+    def backward_before_mark(self, mark, handle_action):
         '''Go backward to the sentence before `mark`.'''
-        self._stm.backward_before_mark(mark, self._handle.call_async, self._proxy(ui_cmds))
+        self._stm.backward_before_mark(mark, self._coqtop.call_async, self._proxy(handle_action))
 
-    def handle_event(self, event, ui_cmds):
-        '''The event handler.'''
-        self._ui_state.handle_event(event, ui_cmds)
+    def handle_event(self, event, handle_action):
+        '''Handle the event generated by the user.'''
+        self._internal_ui.handle_event(event, handle_action)
 
-    def close(self):
+    def close(self, handle_action):
         '''Close the session.'''
-        self._stm.close()
-        self._handle.terminate()
+        self._stm.close(handle_action)
+        self._coqtop.terminate()
 
     def is_busy(self):
         '''Return True if there is scheduled tasks that has not been done.'''
@@ -190,6 +186,7 @@ class Session:
         '''Return the stop of the last sentence.'''
         return self._stm.get_last_stop()
 
-    def _proxy(self, proxied_ui_cmds):
-        '''Get a proxy of the UI commands.'''
-        return UICommandProxy(self._ui_state, proxied_ui_cmds)
+    def _proxy(self, handle_action_in_upper):
+        '''Get a proxy of the action handlers.'''
+        return _ActionProxy(self._internal_ui.is_focused, self._internal_ui.is_active,
+                            self._internal_ui.handle_action, handle_action_in_upper).handle_action
