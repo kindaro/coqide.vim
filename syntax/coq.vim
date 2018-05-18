@@ -50,6 +50,7 @@ syn keyword coqFeedback          Show About Print
 " Modules
 syn region coqModule contains=coqIdent matchgroup=coqTopLevel start="Module" end="\.\_s" end=":="me=e-2 nextgroup=coqModVal
 syn region coqModVal contains=coqIdent start=":=" end="\.\_s"
+syn region coqModEnd contains=coqIndent matchgroup=coqTopLevel start="End" end="\.\_s"
 
 " Terms
 syn cluster coqTerm            contains=coqKwd,coqTermPunctuation,coqKwdMatch,coqKwdLet,coqKwdParen
