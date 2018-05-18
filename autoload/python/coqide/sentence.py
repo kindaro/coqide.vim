@@ -100,7 +100,6 @@ class Sentence:
     def unhighlight(self, handle_action):
         '''Unhighlight the sentence.'''
         if self._hlid:
-            logger.debug('Sentence unhighlight: %s', self._hlid)
             handle_action(actions.UnhlRegion(*self._hlid))
             self._hlid = None
             self._axiom_flag = False
@@ -111,7 +110,6 @@ class Sentence:
         self.unhighlight(handle_action)
         self._hlid = (self.region.bufnr, self.region.start, self.region.stop, self._hlcount)
         self._hlcount += 1
-        logger.debug('Sentence highlight: %s %s', self._hlid, hlgroup)
         handle_action(actions.HlRegion(*self._hlid, hlgroup=hlgroup))
 
     def _highlight_sub(self, hlgroup, start_offset, stop_offset, handle_action):
