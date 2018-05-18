@@ -114,7 +114,7 @@ def _render_goals(goals):
             for goal_pair in goals.background:
                 for goal in itertools.chain(goal_pair[0], goal_pair[1]):
                     content.append('_______________________ ({}/{})'.format(index, total))
-                    content.append(goal.goal)
+                    content.extend(goal.goal.split('\n'))
         else:
             content.append('No more subgoals.')
     else:
@@ -124,10 +124,10 @@ def _render_goals(goals):
             content.append('{} subgoals'.format(nr_fg))
 
         for hyp in goals.foreground[0].hypotheses:
-            content.append(hyp)
+            content.extend(hyp.split('\n'))
         for index, goal in enumerate(goals.foreground):
             content.append('_______________________ ({}/{})'.format(index + 1, nr_fg))
-            content.append(goal.goal)
+            content.extend(goal.goal.split('\n'))
     return content
 
 
