@@ -25,6 +25,10 @@ if !exists('g:coqide_auto_close_session')
     let g:coqide_auto_close_session = 'delete'
 endif
 
+if !exists('g:coqide_no_mappings')
+    let g:coqide_no_mappings = 0
+endif
+
 if g:coqide_debug
     execute 'py3 coqide.setup_debug_log("' . g:coqide_debug_file . '")'
 endif
@@ -143,9 +147,12 @@ function! coqide#Setup()
     command! -buffer CoqBackward call coqide#Backward()
     command! -buffer CoqToCursor call coqide#ToCursor()
 
-    noremap <buffer> <f2> :CoqForward<cr>
-    noremap <buffer> <f3> :CoqBackward<cr>
-    noremap <buffer> <f4> :CoqToCursor<cr>
+    if g:coqide_no_mappings == 0
+        nnoremap <buffer> <f2> :CoqForward<cr>
+        nnoremap <buffer> <f3> :CoqBackward<cr>
+        nnoremap <buffer> <f4> :CoqToCursor<cr>
+        inoremap <buffer> <c-e> <esc>:CoqToCursor<cr>a
+    endif
 
     autocmd BufEnter <buffer> call coqide#HandleEvent('Focus')
     autocmd BufWinEnter <buffer> call coqide#HandleEvent('Active')
