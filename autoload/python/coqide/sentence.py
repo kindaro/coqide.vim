@@ -59,27 +59,30 @@ class Sentence:
         self.region = region
         self.state_id = state_id
         self._hlid = None
-        self._axiom_flag = False
-        self._error_flag = False
+        self._flag = None
         self._hlcount = 0
 
     def set_processing(self, handle_action):
         '''Highlight the sentence to `PROCESSING`.'''
+        if self._flag == self.PROCESSING:
+            return
         self._highlight(self.PROCESSING, handle_action)
+        self._flag = self.PROCESSING
 
     def set_processed(self, handle_action):
         '''Highlight the sentence to `PROCESSED`.
 
         If `_axiom_flag` is set, the highlight remains `AXIOM` unchanged.
         '''
-        if self._axiom_flag or self._error_flag:
+        if self._flag in (self.AXIOM, self.PROCESSED, self.ERROR):
             return
         self._highlight(self.PROCESSED, handle_action)
+        self._flag = self.PROCESSED
 
     def set_axiom(self, handle_action):
         '''Highlight the sentence to `UNSAFE`.'''
         self._highlight(self.AXIOM, handle_action)
-        self._axiom_flag = True
+        self._flag = self.AXIOM
 
     def set_error(self, location, message, handle_action):
         '''Highlight the error in the sentence and show the error message.'''
@@ -91,19 +94,18 @@ class Sentence:
             self._highlight(Sentence.ERROR, handle_action)
 
         handle_action(actions.ShowMessage(message, 'error'))
-        self._error_flag = True
+        self._flag = self.ERROR
 
     def has_error(self):
         '''Return True of the sentence has error.'''
-        return self._error_flag
+        return self._flag == self.ERROR
 
     def unhighlight(self, handle_action):
         '''Unhighlight the sentence.'''
         if self._hlid:
             handle_action(actions.UnhlRegion(*self._hlid))
             self._hlid = None
-            self._axiom_flag = False
-            self._error_flag = False
+            self._flag = None
 
     def _highlight(self, hlgroup, handle_action):
         '''Highlight the whole sentence to the given highlight group.'''
