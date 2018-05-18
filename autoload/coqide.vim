@@ -44,12 +44,12 @@ function! coqide#Activate()
         autocmd VimLeavePre * CoqDeactivate
     endif
 
-    command! CoqShowGoal call coqide#ShowGoal
-    command! CoqHideGoal call coqide#HideGoal
-    command! CoqToggleGoal call coqide#ToggleGoal
-    command! CoqShowMessage call coqide#ShowMessage
-    command! CoqHideMessage call coqide#HideMessage
-    command! CoqToggleMessage call coqide#ToggleMessage
+    command! CoqShowGoal call coqide#ShowGoal()
+    command! CoqHideGoal call coqide#HideGoal()
+    command! CoqToggleGoal call coqide#ToggleGoal()
+    command! CoqShowMessage call coqide#ShowMessage()
+    command! CoqHideMessage call coqide#HideMessage()
+    command! CoqToggleMessage call coqide#ToggleMessage()
     command! CoqUpdateUI call coqide#UpdateUI()
 
     let s:update_timer = timer_start(300, 'coqide#UpdateUI',
