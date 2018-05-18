@@ -296,6 +296,9 @@ class _SentenceEndMatcher:
     '''Special operation. Decrease the nesting level. If the nesting level reaches zero,
     go to `FREE`. Otherwise, go to `COMMENT`.'''
 
+    OP_START_SENTENCE = 102
+    '''Special operation. The leading spaces (including comments) stop here.'''
+
     _TRANSITIONS = {
         LEADING_SPACE: {
             '(': PRE_COMMENT,
@@ -309,7 +312,7 @@ class _SentenceEndMatcher:
             '*': TIMES,
             '{': BRACKET,
             '}': BRACKET,
-            None: FREE,
+            None: OP_START_SENTENCE,
         },
         FREE: {
             '(': PRE_COMMENT,
@@ -373,6 +376,7 @@ class _SentenceEndMatcher:
         '''Create a matcher.'''
         self._state = self.LEADING_SPACE
         self._nesting_level = 0
+        self._start_sentence = False
 
     def feed(self, char):
         '''Feed a character and move to the next state.'''
@@ -386,8 +390,13 @@ class _SentenceEndMatcher:
             self._nesting_level -= 1
             if self._nesting_level:
                 self._state = self.COMMENT
-            else:
+            elif self._start_sentence:
                 self._state = self.FREE
+            else:
+                self._state = self.LEADING_SPACE
+        elif state_or_op == self.OP_START_SENTENCE:
+            self._start_sentence = True
+            self._state = self.FREE
         else:
             self._state = state_or_op
 
