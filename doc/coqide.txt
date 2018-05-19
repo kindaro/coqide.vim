@@ -1,0 +1,211 @@
+*coqide.txt*   CoqIDE in Vim
+*coqide*
+
+==============================================================================
+CONTENTS                                        *coqide-contents*
+
+1. Introduction                                 |coqide-introduction|
+2. Requirements                                 |coqide-requirements|
+3. Commands                                     |coqide-commands|
+4. Windows                                      |coqide-windows|
+5. Options                                      |coqide-options|
+6. Incomplete Features                          |coqide-incomplete-features|
+7. FAQ                                          |coqide-faq|
+8. Changelog                                    |coqide-changelog|
+9. Credits                                      |coqide-credits|
+
+==============================================================================
+1. Why CoqIDE                                   *coqide-introduction*
+
+This plugin is for Coq programming as a counterpart of CoqIDE in Vim.
+
+Besides Coq syntax highlighting, it supports the following features:
+
+- Asynchronous proofs: Vim won't be stuck when validating the proofs.
+- Multi-buffer editing: You can edit more than one Coq buffer at the same time
+  in a Vim instance.
+- Window toggling: You can show or hide |coqide-goal-window| and
+  |coqide-message-window|.
+
+==============================================================================
+2. Requirements                                 *coqide-requirements*
+
+- vim8 or Neovim.
+- vim8/Neovim compiled with Python3 support, you can check by using `echo has('python3')`
+
+==============================================================================
+3. Commands                                     *coqide-commands*
+
+:CoqForward                                     *:CoqForward*
+    Process the next command. The default binding is <f2> in Normal
+    mode.
+
+:CoqBackward                                    *:CoqBackward*
+    Go back to the previous state. The default binding is <f3> in Normal
+    mode.
+
+:CoqToCursor                                    *:CoqToCursor*
+    Process until the command under the cursor if the cursor is ahead of
+    the last processed command in the buffer, or go back to the state of
+    the sentence under the cursor if the cursor is behind the last processed
+    command. The default binding is <f4> in Normal mode and <C-e> in
+    Insert mode.
+
+:CoqClearMessage                                *:CoqClearMessage*
+    Clear the messages in the |coqide-message-window|.
+
+:CoqNewSession                                  *:CoqNewSession*
+    Create a new session on the current buffer. A new coqtop process is
+    spawned to process the commands in the buffer.
+
+    A session is created automatically when opening a Coq file, so
+    |CoqNewSession| doesn't need to be called manually.
+
+:CoqCloseSession                                *:CoqCloseSession*
+    Close the session of the current buffer and kill the related coqtop
+    process.
+
+    The session is closed automatically when deleting or hiding a buffer
+    (depending on |g:coqide_auto_close_session|), so |:CoqCloseSession| doesn't
+    need to be called manually.
+
+:CoqShowGoal                                    *:CoqShowGoal*
+    Show |coqide-goal-window|.
+
+:CoqHideGoal                                    *:CoqHideGoal*
+    Hide |coqide-goal-window|.
+
+:CoqToggleGoal                                  *:CoqToggleGoal*
+    Toggle the visibility of |coqide-goal-window|.
+
+:CoqShowMessage                                 *:CoqShowMessage*
+    Show |coqide-message-window|.
+
+:CoqHideMessage                                 *:CoqHideMessage*
+    Hide |coqide-message-window|.
+
+:CoqToggleMessage                               *:CoqToggleMessage*
+    Toggle the visibility of |coqide-message-window|.
+
+:CoqActivate                                    *:CoqActivate*
+    Activate the CoqIDE plugin.
+
+    The CoqIDE plugin is activated automatically when the first Coq file is
+    opened, so |:CoqActivate| doesn't need to be called manually.
+
+:CoqDeactivate                                  *:CoqDeactivate*
+    Deactivate the CoqIDE plugin, close all the Coq windows and kill all the
+    coqtop processes.
+
+    The CoqIDE plugin is deactivated automatically when Vim is quitting, so
+    |:CoqDeactivate| doesn't need to be called manually.
+
+==============================================================================
+4. Windows                                      *coqide-windows*
+
+Goal Window                                     *coqide-goal-window*
+    The Goal window shows the goals in the current state. Its content is
+    session-based. Hence the content of the window will change when switching
+    between the Coq buffers.
+
+Message Window                                  *coqide-message-window*
+    The Message window shows the messages generated by the last Coq command.
+    Its content is session-based. Hence the content of the window will change
+    when switching between the Coq buffers.
+
+==============================================================================
+5. Options                                      *coqide-options*
+
+g:coqide_debug                                  *g:coqide_debug*
+    Whether to enable the debug logging.
+
+    The default value is 0.
+
+g:coqide_debug_file                             *g:coqide_debug_file*
+    The path of the debug logging file relative to the current working
+    directory or an absolute path if the path starts with a slash.
+
+    The default value is 'coqide.log'.
+
+g:coqide_auto_close_session                     *g:coqide_auto_close_session*
+    When to close the Coq session and kill the coqtop process. The value can
+    be 'delete' or 'unload'.
+
+    - 'delete': close the session when the buffer is deleted
+    - 'unload': close the session when the buffer is unloaded
+
+    The default value is 'delete'.
+
+    The Vim option |'hidden'| controls the behavior when switching to another
+    buffer in a window. If |'hidden'| is off (the default), the buffer is
+    unloaded (keeping the buffer name in the buffer list but free the buffer
+    content in the memory). If otherwise |'hidden'| is on, the buffer is hidden
+    (keeping the buffer name as well as the buffer content).
+
+    Because the default value of |'hidden'| is off, if we close the Coq session
+    when unloading the buffer, we cannot resume the session when switching
+    back, which is usually not what we want. Hence the default behavior of
+    CoqIDE is to close the session only when deleting the buffer (remove
+    the buffer name from the buffer list and free the buffer content) instead
+    of unloading it.
+
+g:coqide_no_mappings                            *g:coqide_no_mappings*
+    Do not set any key mappings.
+
+    The default value is 0.
+
+    The default key mappings are:
+    - <f2> to |:CoqForward| in Normal mode
+    - <f3> to |:CoqBackward| in Normal mode
+    - <f4> to |:CoqToCursor| in Normal mode
+    - <C-e> to |:CoqToCursor| in Insert mode
+
+g:coqide_auto_clear_message                     *g:coqide_auto_clear_message*
+    Whether to clear the messages in |coqide-message-window| before running a
+    command. It can be set to 0 to disable the behavior.
+
+    The default value is 1.
+
+    |:CoqClearMessage| can manually clear the messages.
+
+==============================================================================
+6. Incomplete Features                          *coqide-incomplete-features*
+
+1. Query.
+    No major obstacles. To be added.
+
+2. Auto completion.
+    No major obstacles. To be added.
+
+3. Vim 7.4 support.
+    The only feature used from Vim8/Neovim is |timer_start|. It could be
+    implemented in a Vim7-compatible way.
+
+4. Auto update.
+    In CoqIDE (not this plugin), the tip state of the document follows the
+    editing actions in the file. However, due to the limitation that Vim has
+    no change-reporting feature, a full implementation of this function can be
+    tricky.
+
+5. Full state-editing ability.
+    In CoqIDE (not this plugin), after fixing the error in a previous
+    sentence, some of the following proofs do not need to be validated again.
+    However, this ability also depends on the change-reporting feature so as
+    to precisely know which sentences are changed and which not.
+
+==============================================================================
+7. FAQ                                          *coqide-faq*
+
+
+==============================================================================
+8. Changelog                                    *coqide-changelog*
+
+Stil not stable.
+
+==============================================================================
+9. Credits                                      *coqide-credits*
+
+Maintainer: Thomas Ding <thomasbyding@gmail.com>
+
+==============================================================================
+vim:tw=78:ts=4:ft=help:norl

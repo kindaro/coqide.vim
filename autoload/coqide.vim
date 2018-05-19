@@ -58,7 +58,6 @@ function! coqide#Activate()
     command! CoqShowMessage call coqide#ShowMessage()
     command! CoqHideMessage call coqide#HideMessage()
     command! CoqToggleMessage call coqide#ToggleMessage()
-    command! CoqUpdateUI call coqide#UpdateUI()
 
     let s:update_timer = timer_start(300, 'coqide#UpdateUI',
                 \ { 'repeat': -1 })
