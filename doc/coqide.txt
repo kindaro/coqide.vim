@@ -15,7 +15,7 @@ CONTENTS                                        *coqide-contents*
 9. Credits                                      |coqide-credits|
 
 ==============================================================================
-1. Why CoqIDE                                   *coqide-introduction*
+1. Introduction                                 *coqide-introduction*
 
 This plugin is for Coq programming as a counterpart of CoqIDE in Vim.
 
