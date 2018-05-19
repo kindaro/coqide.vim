@@ -30,8 +30,7 @@ Besides Coq syntax highlighting, it supports the following features:
 ==============================================================================
 2. Requirements                                 *coqide-requirements*
 
-- vim8 or Neovim.
-- vim8/Neovim compiled with Python3 support, you can check by using `echo has('python3')`
+Vim8/Neovim compiled with Python3 support. You can check by using `echo has('python3')`
 
 ==============================================================================
 3. Commands                                     *coqide-commands*
