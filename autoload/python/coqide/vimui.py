@@ -81,7 +81,7 @@ def _switch_buffer(bufnr):
             yield target_buf
 
 
-def _set_buffer_lines(bufnr, lines):
+def _set_buffer_lines(bufnr, lines, append=False):
     '''Set the lines of the buffer.'''
     with _switch_buffer(bufnr) as buf:
         if not buf:
@@ -92,7 +92,10 @@ def _set_buffer_lines(bufnr, lines):
         try:
             for buf in vim.buffers:
                 if buf.number == bufnr:
-                    buf[:] = lines
+                    if append:
+                        buf.append(lines)
+                    else:
+                        buf[:] = lines
                     break
         finally:
             vim.command('let &l:modifiable={}'.format(saved_modif))
@@ -192,7 +195,7 @@ class _MessageWindow:
     def __init__(self):
         '''Initialize the message window.'''
         self._bufnr = None
-        self._content = ['']
+        self._content = []
 
     def show(self, goal_bufnr):
         '''Show the window.
@@ -232,12 +235,17 @@ class _MessageWindow:
 
     def show_messages(self, messages):
         '''Set the content of the message window.'''
-        self._content = []
         for message, _ in messages:
             self._content.extend(message.split('\n'))
 
         if self._bufnr and _is_buffer_active(self._bufnr):
-            _set_buffer_lines(self._bufnr, self._content)
+            _set_buffer_lines(self._bufnr, self._content, append=True)
+
+    def clear_messages(self):
+        '''Clear the message window.'''
+        self._content = []
+        if self._bufnr and _is_buffer_active(self._bufnr):
+            _set_buffer_lines(self._bufnr, [])
 
 
 class _SentenceEndMatcher:
@@ -486,29 +494,30 @@ class _ActionHandler(actions.ActionHandlerBase):
     effects.
     '''
 
-    def __init__(self, show_goals, show_messages):
-        '''Create the action handler.
-
-        `show_goals(goals)` is a function to show the Goals object in the
-        Goal window.
-
-        `show_messages(messages)` is a function to show the messages in the
-        Message window. The argument `messages` is a list of tuple `(text, level)`.
-        '''
-        self._show_goals = show_goals
-        self._show_messages = show_messages
-
+    def __init__(self):
+        '''Create the action handler.  '''
         self._goal_op = None
-        self._message_op = None
+        self._messages = []
         self._hl_ops = {}
         self._other_ops = []
 
         self._hl_match_ids = {}
 
-    def update_ui(self):
+    def update_ui(self, renderers):
         '''Run all the pending UI operations.
 
-        It must be called periodically in the Vim UI thread.'''
+        It must be called periodically in the Vim UI thread.
+
+        `renderers` is a dict containing the following functions:
+        - `show_goals(goals)` is a function to show the Goals object in the
+        Goal window.
+
+        - `show_messages([(message, level), ...])` is a function to show the messages in the
+        Message window.
+
+        - `clear_messages()` is a function to clear the messages in the Message
+        window.
+        '''
         # During the application of the operations, new operations may be
         # added to the internal buffer. So we first fetch them and clear
         # the buffer to "save a snapshot".
@@ -516,27 +525,34 @@ class _ActionHandler(actions.ActionHandlerBase):
         if self._goal_op:
             ops.append(self._goal_op)
             self._goal_op = None
-        if self._message_op:
-            ops.append(self._message_op)
-            self._message_op = None
+        messages = self._messages
+        self._messages = []
         ops.extend(self._hl_ops.values())
         self._hl_ops = {}
         ops.extend(self._other_ops)
         self._other_ops = []
 
         for operation in ops:
-            operation()
+            operation(renderers)
+
+        if messages:
+            renderers['show_messages'](messages)
 
     def _on_show_goals(self, action):
-        self._goal_op = lambda: self._show_goals(action.goals)
+        self._goal_op = lambda r: r['show_goals'](action.goals)
 
     def _on_show_message(self, action):
-        self._message_op = lambda: self._show_messages([(action.message, action.level)])
+        if action.message:
+            self._messages.append(tuple(action))
+
+    def _on_clear_message(self, _):
+        self._messages = []
+        self._other_ops.append(lambda r: r['clear_messages']())
 
     def _on_hl_region(self, action):
         hlid = (action.bufnr, action.start, action.stop, action.token)
 
-        def highlight_op():
+        def highlight_op(_):
             '''Highlight the region in the buffer and save the match ids.'''
             bufnr, start, stop, _, hlgroup = action
             match_ids = []
@@ -574,7 +590,7 @@ class _ActionHandler(actions.ActionHandlerBase):
     def _on_unhl_region(self, action):
         hlid = (action.bufnr, action.start, action.stop, action.token)
 
-        def unhighlight_op():
+        def unhighlight_op(_):
             '''Unhighlight the matches.'''
             logger.debug('Unhighlight: %s %s', action, self._hl_match_ids[hlid])
 
@@ -593,7 +609,7 @@ class _ActionHandler(actions.ActionHandlerBase):
 
     def _on_conn_lost(self, action):
         '''Notify the user that the connection to the coqtop process is lost.'''
-        def conn_lost_op():
+        def conn_lost_op(_):
             '''Notify the user that the connection is lost.'''
             vim.command('echom "{}"'.format('Coqtop subprocess quits unexpectedly.'))
         self._other_ops.append(conn_lost_op)
@@ -608,10 +624,12 @@ class VimUI:
         self._message = _MessageWindow()
         self._goal.show(None)
         self._message.show(self._goal.bufnr())
-        self._action_handler = _ActionHandler(self._goal.show_goals,
-                                              self._message.show_messages)
+        self._action_handler = _ActionHandler()
         self._sessions = {}
         self._last_focused_bufnr = None
+        self._renderers = {'show_goals': self._goal.show_goals,
+                           'show_messages': self._message.show_messages,
+                           'clear_messages': self._message.clear_messages}
 
     def new_session(self):
         '''Create a new session bound to the current buffer.'''
@@ -684,6 +702,11 @@ class VimUI:
             logger.debug('Backward to cursor in session [%s]', bufnr)
             session.backward_before_mark(cursor, self._handle_action)
 
+    @_in_session
+    def clear_message(self, session, _):
+        '''Clear the messages in the message window of `session`.'''
+        session.clear_message(self._handle_action)
+
     def set_goal_visibility(self, visibility):
         '''Set the visibility of the goal window to 'show', 'hide' or 'toggle'.'''
         if visibility == 'show':
@@ -725,7 +748,7 @@ class VimUI:
     def update_ui(self):
         '''Apply the pending UI operations.'''
         try:
-            self._action_handler.update_ui()
+            self._action_handler.update_ui(self._renderers)
         except vim.error:
             logger.debug('Catched exception in update_ui', exc_info=True)
 

@@ -14,6 +14,9 @@ ShowGoals = namedtuple('ShowGoals', 'goals')
 ShowMessage = namedtuple('ShowMessage', 'message level')
 '''Show the message in the Message window.'''
 
+ClearMessage = namedtuple('ClearMessage', '')
+'''Clear the message in the Message window.'''
+
 HlRegion = namedtuple('HlRegion', 'bufnr start stop token hlgroup')
 '''Highlight the region between Marks `start` and `stop` of buffer `bufnr` to  `hlgroup`.
 
@@ -39,6 +42,7 @@ class ActionHandlerBase(ABC):                         # pylint: disable=R0903
     __ACTION_HANDLERS = (
         (ShowGoals, '_on_show_goals'),
         (ShowMessage, '_on_show_message'),
+        (ClearMessage, '_on_clear_message'),
         (HlRegion, '_on_hl_region'),
         (UnhlRegion, '_on_unhl_region'),
         (ConnLost, '_on_conn_lost'),
@@ -60,6 +64,10 @@ class ActionHandlerBase(ABC):                         # pylint: disable=R0903
 
     @abstractmethod
     def _on_show_message(self, action):
+        pass
+
+    @abstractmethod
+    def _on_clear_message(self, action):
         pass
 
     @abstractmethod

@@ -29,6 +29,10 @@ if !exists('g:coqide_no_mappings')
     let g:coqide_no_mappings = 0
 endif
 
+if !exists('g:coqide_auto_clear_message')
+    let g:coqide_auto_clear_message = 1
+endif
+
 if g:coqide_debug
     execute 'py3 coqide.setup_debug_log("' . g:coqide_debug_file . '")'
 endif
@@ -92,16 +96,25 @@ function! coqide#CloseSession()
 endfunction
 
 function! coqide#Forward()
+    if g:coqide_auto_clear_message
+        call coqide#ClearMessage()
+    endif
     py3 ide.forward()
     call timer_start(100, 'coqide#UpdateUI')
 endfunction
 
 function! coqide#Backward()
+    if g:coqide_auto_clear_message
+        call coqide#ClearMessage()
+    endif
     py3 ide.backward()
     call timer_start(100, 'coqide#UpdateUI')
 endfunction
 
 function! coqide#ToCursor()
+    if g:coqide_auto_clear_message
+        call coqide#ClearMessage()
+    endif
     py3 ide.to_cursor()
     call timer_start(100, 'coqide#UpdateUI')
 endfunction
@@ -130,6 +143,10 @@ function! coqide#ToggleMessage()
     py3 ide.set_message_visibility('toggle')
 endfunction
 
+function! coqide#ClearMessage()
+    py3 ide.clear_message()
+endfunction
+
 function! coqide#UpdateUI(...)
     py3 ide.update_ui()
 endfunction
@@ -146,6 +163,7 @@ function! coqide#Setup()
     command! -buffer CoqForward call coqide#Forward()
     command! -buffer CoqBackward call coqide#Backward()
     command! -buffer CoqToCursor call coqide#ToCursor()
+    command! -buffer CoqClearMessage call coqide#ClearMessage()
 
     if g:coqide_no_mappings == 0
         nnoremap <buffer> <f2> :CoqForward<cr>
