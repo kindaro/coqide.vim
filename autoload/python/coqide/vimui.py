@@ -308,7 +308,7 @@ class _SentenceEndMatcher:
     '''Special operation. The leading spaces (including comments) stop here.'''
 
     OP_NOT_COMMENT = 103
-    '''Speciao operation. It is not the beginning of a comment.'''
+    '''Special operation. It is not the beginning of a comment.'''
 
     _TRANSITIONS = {
         LEADING_SPACE: {
