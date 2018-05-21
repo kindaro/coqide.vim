@@ -94,6 +94,7 @@ syn region coqLocalScope contained contains=coqScope matchgroup=coqVernacCmd sta
 " Hints
 syn region coqHint contains=coqHintOption start="\<Hint\>" end="\.\_s" keepend
 syn region coqHintOption start="\<\%(Resolve\|Immediate\|Constructors\|Unfold\|Extern\)\>" end="\.\_s"
+syn region coqRemoveHint start="\<Remove\>\s\+\<Hints\>" end="\.\_s" keepend
 
 " Add
 syn region coqAdd       contains=coqAddOption,coqAddOption2 matchgroup=coqVernacCmd start="\<Add\>" matchgroup=coqVernacPunctuation end="\.\_s" keepend
@@ -332,6 +333,7 @@ if version >= 508 || !exists("did_coq_syntax_inits")
  HiLink coqVernacCmd         coqVernacular
  HiLink coqVernacPunctuation coqVernacular
  HiLink coqHint              coqVernacular
+ HiLink coqRemoveHint        coqVernacular
  HiLink coqFeedback          coqVernacular
  HiLink coqTopLevel          coqVernacular
 
