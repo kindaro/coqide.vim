@@ -428,7 +428,6 @@ def _in_session(func):
     def wrapped(self, *args, **kwargs):                  # pylint: disable=C0111
         session, bufnr = self._get_current_session()     # pylint: disable=W0212
         if session is None:
-            print('Not in Coq')
             return
         func(self, session, bufnr, *args, **kwargs)
     return wrapped
@@ -750,6 +749,15 @@ class VimUI:
             event_class = getattr(events, event_name)
             event = event_class(*event_args)
             session.handle_event(event, self._handle_action)
+
+    @_in_session
+    def edit_at(self, session, bufnr, line, col):
+        '''Go to the state under the cursor.'''
+        if session.is_busy():
+            return
+        stop = session.get_last_stop()
+        if line < stop.line or (line == stop.line and col <= stop.col):
+            session.backward_before_mark(Mark(line, col), self._handle_action)
 
     def update_ui(self):
         '''Apply the pending UI operations.'''

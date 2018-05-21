@@ -84,6 +84,9 @@ endfunction
 
 function! coqide#NewSession()
     py3 ide.new_session()
+
+    call coqide#HandleEvent('Focus')
+    call coqide#HandleEvent('Active')
 endfunction
 
 function! coqide#CloseSession()
@@ -154,6 +157,24 @@ function! coqide#HandleEvent(event)
     execute 'py3 ide.handle_event("' . a:event . '")'
 endfunction
 
+function! coqide#OnTextChanged()
+    let buflen = line('$')
+    let [_, cursor_line, _, _] = getpos('.')
+    let saved_view = winsaveview()
+    normal `[
+    let [_, start_line, start_col, _] = getpos('.')
+    normal `]
+    let [_, end_line, _, _] = getpos('.')
+    call winrestview(saved_view)
+
+    if buflen == b:coqide_last_buflen && start_line == end_line
+                \ && start_line == cursor_line
+        execute 'py3 ide.edit_at('.start_line.', '.start_col.')'
+    endif
+
+    let b:coqide_last_buflen = buflen
+endfunction
+
 function! coqide#Setup()
     CoqActivate
 
@@ -174,6 +195,8 @@ function! coqide#Setup()
     autocmd BufEnter <buffer> call coqide#HandleEvent('Focus')
     autocmd BufWinEnter <buffer> call coqide#HandleEvent('Active')
     autocmd BufWinLeave <buffer> call coqide#HandleEvent('Inactive')
+    autocmd TextChanged <buffer> call coqide#OnTextChanged()
+    autocmd TextChangedI <buffer> call coqide#OnTextChanged()
 
     if g:coqide_auto_close_session == 'unload'
         autocmd BufUnload <buffer> CoqCloseSession
@@ -185,6 +208,8 @@ function! coqide#Setup()
     endif
 
     CoqNewSession
+
+    let b:coqide_last_buflen = line('$')
 endfunction
 
 command! CoqActivate call coqide#Activate()

@@ -120,20 +120,28 @@ class _InternalUI(actions.ActionHandlerBase, events.EventHandlerBase):
         pass
 
     def _on_focus(self, _, handle_action):
+        if self._focused:
+            return
         self._focused = True
         handle_action(actions.ShowGoals(self._goals))
         for message, level in self._messages:
             handle_action(actions.ShowMessage(message, level))
 
     def _on_unfocus(self, _1, _2):
+        if not self._focused:
+            return
         self._focused = False
 
     def _on_active(self, _, handle_action):
+        if self._active:
+            return
         self._active = True
         for hlid, hlgroup in self._hl_map.items():
             handle_action(actions.HlRegion(*hlid, hlgroup=hlgroup))
 
     def _on_inactive(self, _, handle_action):
+        if not self._active:
+            return
         self._active = False
         for hlid in self._hl_map:
             handle_action(actions.UnhlRegion(*hlid))
