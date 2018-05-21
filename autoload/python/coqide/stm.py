@@ -121,14 +121,13 @@ class _FeedbackHandler:                                # pylint: disable=R0903
         [xp.AddedAxiom, '_on_added_axiom'],
     ]
 
-    def __init__(self, state_id_map, handle_action, handle_sentence_error):
+    def __init__(self, state_id_map, handle_action):
         '''Create a feedback handler.
 
         The handler requires the property `state_id_map` of the STM object in a read-only manner.
         '''
         self._state_id_map = state_id_map
         self._handle_action = handle_action
-        self._handle_sentence_error = handle_sentence_error
 
     def __call__(self, feedback):
         '''Process the given feedback.
@@ -148,7 +147,6 @@ class _FeedbackHandler:                                # pylint: disable=R0903
         '''Process ErrorMsg.'''
         if sentence:
             sentence.set_error(error_msg.location, error_msg.message, self._handle_action)
-            self._handle_sentence_error(self._handle_action)
         else:
             self._handle_action(actions.ShowMessage(error_msg.message, 'error'))
 
@@ -157,7 +155,6 @@ class _FeedbackHandler:                                # pylint: disable=R0903
         if message.level == 'error':
             if sentence:
                 sentence.set_error(message.location, message.message, self._handle_action)
-                self._handle_sentence_error(self._handle_action)
             else:
                 self._handle_action(actions.ShowMessage(message.message, 'error'))
         else:
@@ -194,7 +191,7 @@ class STM:
 
     def make_feedback_handler(self, handle_action):
         '''Return an associated feedback handler.'''
-        return _FeedbackHandler(self._state_id_map, handle_action, self._on_sentence_error)
+        return _FeedbackHandler(self._state_id_map, handle_action)
 
     def init(self, call_async, handle_action):
         '''Initialize the state machine.'''
@@ -279,7 +276,6 @@ class STM:
         '''Accept a new sentence region and go forward.'''
         def task(done):
             '''Send Add call.'''
-            @_finally_call(done)
             def on_res(xml):
                 '''Process the Add response.'''
                 res = xp.AddRes.from_xml(xml)
@@ -290,11 +286,19 @@ class STM:
                     self._state_id_map[state_id] = sentence
                     sentence.set_processing(handle_action)
                     handle_action(actions.ShowMessage(res.message, 'info'))
+
+                    if res.next_state_id:
+                        # Set the tip to new_state_id
+                        self._backward_before_index(len(self._sentences), done,
+                                                    call_async, handle_action)
+                    else:
+                        done()
                 else:
                     self._task_thread.discard_scheduled_tasks()
                     sentence = Sentence(sregion, 0)
                     self._failed_sentence = sentence
                     sentence.set_error(res.error.location, res.error.message, handle_action)
+                    done()
 
             self._clear_failed_sentence(handle_action)
             req = xp.AddReq(sregion.command, -1, self._tip_state_id(), False)
@@ -327,6 +331,15 @@ class STM:
                     sentence.unhighlight(handle_action)
                     del self._state_id_map[sentence.state_id]
                 del self._sentences[index:]
+            else:
+                # Coqtop will tell us which state is the nearest editable.
+                # Backward to the editable state id.
+                message = res.error.message
+                handle_action(actions.ShowMessage(message, 'error'))
+
+                state_id = res.error.state_id
+                stop = self._state_id_map[state_id].region.stop
+                self.backward_before_mark(stop, call_async, handle_action)
 
         if index == 0:
             state_id = self._init_state_id
@@ -335,6 +348,16 @@ class STM:
         self._clear_failed_sentence(handle_action)
         req = xp.EditAtReq(state_id)
         call_async(req, on_res, self._make_on_lost_cb(done, handle_action))
+
+    def _edit_at_current_state(self, call_async, handle_action):
+        '''Let the Coqtop state machine edit at the current state.
+
+        Used when closing a proof with Qed.
+        '''
+        def task(done):
+            '''The task.'''
+            self._backward_before_index(len(self._sentences), done, call_async, handle_action)
+        self._task_thread.schedule(task, 'edit_at_current_state')
 
     def _update_goal(self, call_async, handle_action):
         '''Update the goals.'''
@@ -362,21 +385,3 @@ class STM:
             self._state_id_map = {}
             handle_action(actions.ConnLost(self._bufnr))
         return callback
-
-    def _on_sentence_error(self, handle_action):
-        '''Handle the feedback of sentence errors.
-
-        It removes all the sentences after the first error sentence.'''
-        self._task_thread.discard_scheduled_tasks()
-
-        for index, sentence in enumerate(self._sentences):
-            if sentence.has_error():
-                start_index = index + 1
-                break
-        else:
-            return
-
-        for sentence in self._sentences[start_index:]:
-            sentence.unhighlight(handle_action)
-            del self._state_id_map[sentence.state_id]
-        del self._sentences[start_index:]

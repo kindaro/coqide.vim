@@ -246,7 +246,7 @@ class AddReq(namedtuple('AddReq', 'command edit_id state_id verbose')):
         return xml
 
 
-class AddRes(namedtuple('AddRes', 'error new_state_id message')):
+class AddRes(namedtuple('AddRes', 'error new_state_id message next_state_id')):
     '''The response of Add call.'''
     __slots__ = ()
 
@@ -256,8 +256,8 @@ class AddRes(namedtuple('AddRes', 'error new_state_id message')):
         assert xml.tag == 'value'
         if xml.attrib['val'] == 'good':
             content = _data_from_xml(xml[0])
-            return cls(None, content[0], content[1][1])
-        return cls(ErrorValue.from_xml(xml), None, None)
+            return cls(None, content[0], content[1][1], content[1][0].value)
+        return cls(ErrorValue.from_xml(xml), None, None, None)
 
 
 class InitReq(namedtuple('InitReq', '')):
