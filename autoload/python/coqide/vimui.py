@@ -307,6 +307,9 @@ class _SentenceEndMatcher:
     OP_START_SENTENCE = 102
     '''Special operation. The leading spaces (including comments) stop here.'''
 
+    OP_NOT_COMMENT = 103
+    '''Speciao operation. It is not the beginning of a comment.'''
+
     _TRANSITIONS = {
         LEADING_SPACE: {
             '(': PRE_COMMENT,
@@ -331,10 +334,11 @@ class _SentenceEndMatcher:
         PRE_COMMENT: {
             '*': OP_ENTER_COMMENT,
             '.': PRE_DOT,
-            None: FREE,
+            None: OP_NOT_COMMENT,
         },
         COMMENT: {
             '*': POST_COMMENT,
+            '(': PRE_COMMENT,
             None: COMMENT,
         },
         POST_COMMENT: {
@@ -394,8 +398,10 @@ class _SentenceEndMatcher:
         if state_or_op == self.OP_ENTER_COMMENT:
             self._nesting_level += 1
             self._state = self.COMMENT
-        elif state_or_op == self.OP_LEAVE_COMMENT:
-            self._nesting_level -= 1
+        elif state_or_op in (self.OP_LEAVE_COMMENT, self.OP_NOT_COMMENT):
+            if state_or_op == self.OP_LEAVE_COMMENT:
+                self._nesting_level -= 1
+
             if self._nesting_level:
                 self._state = self.COMMENT
             elif self._start_sentence:
