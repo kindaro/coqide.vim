@@ -671,7 +671,7 @@ class VimUI:
             logger.debug('Session [%s] busy.', bufnr)
             return
 
-        start = session.get_last_stop()
+        start = session.get_tip_stop()
         stop = _find_stop_after(start)
         if stop is None:
             return
@@ -698,7 +698,7 @@ class VimUI:
             logger.debug('Session [%s] busy.', bufnr)
             return
 
-        stop = session.get_last_stop()
+        stop = session.get_tip_stop()
         cursor = _get_cursor()
         if cursor.line > stop.line or \
                 (cursor.line == stop.line and cursor.col > stop.col):
@@ -751,13 +751,25 @@ class VimUI:
             session.handle_event(event, self._handle_action)
 
     @_in_session
-    def edit_at(self, session, bufnr, line, col):
+    def edit_at(self, session, _, line, col):
         '''Go to the state under the cursor.'''
+        return
         if session.is_busy():
             return
         stop = session.get_last_stop()
         if line < stop.line or (line == stop.line and col <= stop.col):
             session.backward_before_mark(Mark(line, col), self._handle_action)
+
+    @_in_session
+    def apply_text_changes(self, session, _):
+        '''Apply the changes of the buffer text to the STM.'''
+        return
+        if session.is_busy():
+            return
+
+        prev_revision = vim.eval('g:coqtop_buffer_prev')
+        cur_revision = vim.current.buffer[:]
+        session.apply_text_changes(prev_revision, cur_revision, self._handle_action)
 
     def update_ui(self):
         '''Apply the pending UI operations.'''
@@ -780,7 +792,7 @@ class VimUI:
         '''Go forward to the sentence before the cursor.'''
         logger.debug('Forward to cursor in session [%s]', bufnr)
 
-        start = session.get_last_stop()
+        start = session.get_tip_stop()
         cursor = _get_cursor()
         regions = []
 

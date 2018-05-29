@@ -159,19 +159,24 @@ endfunction
 
 function! coqide#OnTextChanged()
     let buflen = line('$')
-    let [_, cursor_line, _, _] = getpos('.')
     let saved_view = winsaveview()
+    let [_, cursor_line, _, _] = getpos('.')
     normal `[
     let [_, start_line, start_col, _] = getpos('.')
     normal `]
     let [_, end_line, _, _] = getpos('.')
-    call winrestview(saved_view)
 
     if buflen == b:coqide_last_buflen && start_line == end_line
                 \ && start_line == cursor_line
         execute 'py3 ide.edit_at('.start_line.', '.start_col.')'
+    else
+        silent undo
+        let g:coqide_buffer_prev = getbufline('%', 1, '$')
+        silent redo
+        py3 ide.apply_text_changes()
     endif
 
+    call winrestview(saved_view)
     let b:coqide_last_buflen = buflen
 endfunction
 

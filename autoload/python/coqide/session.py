@@ -8,6 +8,7 @@ import logging
 
 from . import actions
 from . import events
+from .diff import DiffThread
 
 
 logger = logging.getLogger(__name__)     # pylint: disable=C0103
@@ -165,6 +166,7 @@ class Session:
 
         self._stm = stm
         self._coqtop = coqtop
+        self._diff_thread = DiffThread()
 
     def init(self, handle_action):
         '''Initialize the STM.'''
@@ -198,6 +200,7 @@ class Session:
         '''Close the session.'''
         self._stm.close(handle_action)
         self._coqtop.terminate()
+        self._diff_thread.shutdown_join()
 
     def is_busy(self):
         '''Return True if there is scheduled tasks that has not been done.'''
@@ -206,6 +209,16 @@ class Session:
     def get_last_stop(self):
         '''Return the stop of the last sentence.'''
         return self._stm.get_last_stop()
+
+    def get_tip_stop(self):
+        '''Return the stop of the tip sentence.'''
+        return self._stm.get_tip_stop()
+
+    def apply_text_changes(self, prev_revision, cur_revision, handle_action):
+        '''Apply the text changes betweeen the two revisions to STM.'''
+        def _on_compared(changes):
+            self._stm.on_text_changed(changes, self._coqtop.call_async, handle_action)
+        self._diff_thread.compare(prev_revision, cur_revision, _on_compared)
 
     def _proxy(self, handle_action_in_upper):
         '''Get a proxy of the action handlers.'''

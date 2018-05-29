@@ -107,6 +107,14 @@ class Sentence:
             self._hlid = None
             self._flag = None
 
+    def rehighlight(self, handle_action):
+        '''Rehighlight the sentence according to the new region.'''
+        if self._hlid is None:
+            return
+
+        handle_action(actions.UnhlRegion(*self._hlid))
+        self._highlight(self._flag, handle_action)
+
     def _highlight(self, hlgroup, handle_action):
         '''Highlight the whole sentence to the given highlight group.'''
         self.unhighlight(handle_action)

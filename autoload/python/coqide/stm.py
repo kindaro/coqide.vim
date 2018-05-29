@@ -171,6 +171,73 @@ class _FeedbackHandler:                                # pylint: disable=R0903
             sentence.set_axiom(self._handle_action)
 
 
+class _Document:
+    '''This class manages the sentences in a document.'''
+
+    def __init__(self):
+        '''Create a new Document.'''
+        self.sentences = []
+        self.state_id_map = {}
+        self.line_map = {}
+
+    def add(self, sentence, tip):
+        '''Add a sentence.'''
+        if tip:
+            index = self.sentences.index(tip) + 1
+        else:
+            index = len(self.sentences)
+
+        self.sentences.insert(index, sentence)
+        self.state_id_map[sentence.state_id] = sentence
+
+        start_line = sentence.region.start.line
+        stop_line = sentence.region.stop.line
+        for line in range(start_line, stop_line + 1):
+            if line in self.line_map:
+                self.line_map[line].append(sentence)
+            else:
+                self.line_map[line] = [sentence]
+
+    def remove_by_index(self, index_slice):
+        '''Remove the sentences in self.sentence[start:end].'''
+        for sentence in self.sentences[index_slice]:
+            del self.state_id_map[sentence.state_id]
+            start_line = sentence.region.start.line
+            stop_line = sentence.region.stop.line
+            for line in range(start_line, stop_line + 1):
+                self.line_map[line].remove(sentence)
+        del self.sentences[index_slice]
+
+    def clear(self):
+        '''Remove all the sentences.'''
+        self.sentences.clear()
+        self.state_id_map.clear()
+        self.line_map.clear()
+
+    def iter_covering_line(self, line):
+        '''Iterate over the sentences that cover `line`.'''
+        return self.line_map.get(line, [])
+
+    def iter_starting_line(self, line):
+        '''Iterate over the sentences that start from `line.`'''
+        for sentence in self.line_map.get(line, []):
+            if sentence.region.start.line == line:
+                yield sentence
+
+    def remove_covering_line(self, line):
+        '''Remove the sentences that cover `line`.'''
+        for sentence in self.line_map.get(line, []):
+            del self.state_id_map[sentence.state_id]
+            self.sentences.remove(sentence)
+        self.line_map[line].clear()
+
+    def __len__(self):
+        return len(self.sentences)
+
+    def __bool__(self):
+        return bool(self.sentences)
+
+
 class STM:
     '''A STM records the execution state of a Coq document.
 
@@ -182,16 +249,16 @@ class STM:
 
         `bufnr` is the number of the related buffer. It never directly uses `bufnr`, only as an
         identifier to make UI actions.'''
-        self._sentences = []
-        self._state_id_map = {}
+        self._doc = _Document()
         self._failed_sentence = None
         self._init_state_id = None
         self._task_thread = _SequentialTaskThread()
         self._bufnr = bufnr
+        self._tip_sentence = None
 
     def make_feedback_handler(self, handle_action):
         '''Return an associated feedback handler.'''
-        return _FeedbackHandler(self._state_id_map, handle_action)
+        return _FeedbackHandler(self._doc.state_id_map, handle_action)
 
     def init(self, call_async, handle_action):
         '''Initialize the state machine.'''
@@ -210,7 +277,7 @@ class STM:
 
     def forward(self, sregion, call_async, handle_action):
         '''Forward one sentence.'''
-        if self._sentences and self._sentences[-1].has_error():
+        if self._doc and self._doc.sentences[-1].has_error():
             handle_action(actions.ShowMessage('Fix the error first', 'error'))
             return
         self._forward_one(sregion, call_async, handle_action)
@@ -218,7 +285,7 @@ class STM:
 
     def forward_many(self, sregions, call_async, handle_action):
         '''The bulk call of `forward`.'''
-        if self._sentences and self._sentences[-1].has_error():
+        if self._doc and self._doc.sentences[-1].has_error():
             handle_action(actions.ShowMessage('Fix the error first.', 'error'))
             return
         for sregion in sregions:
@@ -229,8 +296,8 @@ class STM:
         '''Go backward to the previous state.'''
         def task(done):
             '''Go backward to the previous state of the current state.'''
-            if self._sentences:
-                last = len(self._sentences) - 1
+            if self._doc:
+                last = len(self._doc.sentences) - 1
                 self._backward_before_index(last, done, call_async, handle_action)
             else:
                 done()
@@ -241,7 +308,7 @@ class STM:
         '''Go backward to the sentence before the given mark.'''
         def task(done):
             '''Find the sentence and go backward.'''
-            for i, sentence in enumerate(self._sentences):
+            for i, sentence in enumerate(self._doc.sentences):
                 stop = sentence.region.stop
                 if stop.line > mark.line or \
                         (stop.line == mark.line and stop.col > mark.col):
@@ -254,8 +321,16 @@ class STM:
 
     def get_last_stop(self):
         '''Return the stop of the last sentence.'''
-        if self._sentences:
-            return self._sentences[-1].region.stop
+        if self._doc:
+            return self._doc.sentences[-1].region.stop
+        return Mark(1, 1)
+
+    def get_tip_stop(self):
+        '''Return the stop of the tip sentence.'''
+        if self._tip_sentence:
+            return self._tip_sentence.region.stop
+        if self._doc:
+            return self._doc.sentences[-1].region.stop
         return Mark(1, 1)
 
     def is_busy(self):
@@ -267,38 +342,57 @@ class STM:
     def close(self, handle_action):
         '''Close and clean up the state machine.'''
         self._task_thread.shutdown_join()
-        for sentence in self._sentences:
+        for sentence in self._doc.sentences:
             sentence.unhighlight(handle_action)
-        self._sentences = []
-        self._state_id_map = {}
+        self._doc.clear()
+
+    def on_text_changed(self, changes, call_async, handle_action):
+        '''Process the text changes by invalidating some states and adjusting the locations of
+        other.'''
+        return
+        def _invalidate(done, sentence):
+            '''Invalidate the `sentence`.'''
+            self._backward_before_index(sentence)
+
+        for line, changed, delta in changes:
+            if changed:
+                for sentence in self._doc.iter_covering_line(line):
+                    sentence.unhighlight()
+                self._doc.remove_covering_line(line)
+            elif delta:
+                for sentence in self._doc.iter_starting_line(line):
+                    old_start_line = sentence.region.start.line
+                    new_start_line = old_start_line + delta
+                    start_col = sentence.region.start.col
+                    sentence.region = sentence.region._replace(
+                        start=Mark(new_start_line, start_col))
+                    sentence.rehighlight(handle_action)
 
     def _forward_one(self, sregion, call_async, handle_action):
         '''Accept a new sentence region and go forward.'''
         def task(done):
             '''Send Add call.'''
+            @_finally_call(done)
             def on_res(xml):
                 '''Process the Add response.'''
                 res = xp.AddRes.from_xml(xml)
                 if not res.error:
                     state_id = res.new_state_id
                     sentence = Sentence(sregion, state_id)
-                    self._sentences.append(sentence)
-                    self._state_id_map[state_id] = sentence
+                    self._doc.add(sentence, self._tip_sentence)
                     sentence.set_processing(handle_action)
                     handle_action(actions.ShowMessage(res.message, 'info'))
 
                     if res.next_state_id:
                         # Set the tip to new_state_id
-                        self._backward_before_index(len(self._sentences), done,
-                                                    call_async, handle_action)
+                        self._tip_sentence = self._doc.state_id_map[res.next_state_id]
                     else:
-                        done()
+                        self._tip_sentence = None
                 else:
                     self._task_thread.discard_scheduled_tasks()
                     sentence = Sentence(sregion, 0)
                     self._failed_sentence = sentence
                     sentence.set_error(res.error.location, res.error.message, handle_action)
-                    done()
 
             self._clear_failed_sentence(handle_action)
             req = xp.AddReq(sregion.command, -1, self._tip_state_id(), False)
@@ -313,38 +407,48 @@ class STM:
 
     def _tip_state_id(self):
         '''Return the tip state id.'''
-        if self._sentences:
-            return self._sentences[-1].state_id
+        if self._tip_sentence:
+            return self._tip_sentence.state_id
+        if self._doc:
+            return self._doc.sentences[-1].state_id
         return self._init_state_id
 
     def _backward_before_index(self, index, done, call_async, handle_action):
-        '''Go backward to the state of `self._sentences[index - 1]`.
+        '''Go backward to the state of `self._doc.sentences[index - 1]`.
 
         If `index == 0`, go to the initial state.
         '''
-        @_finally_call(done)
         def on_res(xml):
             '''Process EditAt response and remove the trailing sentences.'''
             res = xp.EditAtRes.from_xml(xml)
             if not res.error:
-                for sentence in self._sentences[index:]:
-                    sentence.unhighlight(handle_action)
-                    del self._state_id_map[sentence.state_id]
-                del self._sentences[index:]
+                if not res.focused:
+                    for sentence in self._doc.sentences[index:]:
+                        sentence.unhighlight(handle_action)
+                    self._doc.remove_by_index(slice(index, None))
+                    self._tip_sentence = None
+                else:
+                    qed_sentence = self._doc.state_id_map[res.qed]
+                    qed_index = self._doc.sentences.index(qed_sentence)
+                    for sentence in self._doc.sentences[index:qed_index+1]:
+                        sentence.unhighlight(handle_action)
+                    self._doc.remove_by_index(slice(index, qed_index+1))
+                    self._tip_sentence = self._doc.sentences[index - 1]
+                done()
             else:
                 # Coqtop will tell us which state is the nearest editable.
                 # Backward to the editable state id.
                 message = res.error.message
                 handle_action(actions.ShowMessage(message, 'error'))
 
-                state_id = res.error.state_id
-                stop = self._state_id_map[state_id].region.stop
-                self.backward_before_mark(stop, call_async, handle_action)
+                sentence = self._doc.state_id_map[res.error.state_id]
+                sindex = self._doc.sentences.index(sentence)
+                self._backward_before_index(sindex + 1, done, call_async, handle_action)
 
         if index == 0:
             state_id = self._init_state_id
         else:
-            state_id = self._sentences[index - 1].state_id
+            state_id = self._doc.sentences[index - 1].state_id
         self._clear_failed_sentence(handle_action)
         req = xp.EditAtReq(state_id)
         call_async(req, on_res, self._make_on_lost_cb(done, handle_action))
@@ -356,7 +460,7 @@ class STM:
         '''
         def task(done):
             '''The task.'''
-            self._backward_before_index(len(self._sentences), done, call_async, handle_action)
+            self._backward_before_index(len(self._doc), done, call_async, handle_action)
         self._task_thread.schedule(task, 'edit_at_current_state')
 
     def _update_goal(self, call_async, handle_action):
@@ -379,9 +483,8 @@ class STM:
         def callback():
             '''Process the connection lost event.'''
             self._task_thread.discard_scheduled_tasks()
-            for sentence in self._sentences:
+            for sentence in self._doc.sentences:
                 sentence.unhighlight(handle_action)
-            self._sentences = []
-            self._state_id_map = {}
+            self._doc.clear()
             handle_action(actions.ConnLost(self._bufnr))
         return callback

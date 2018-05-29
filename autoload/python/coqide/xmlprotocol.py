@@ -296,7 +296,7 @@ class EditAtReq(namedtuple('EditAtReq', 'state_id')):
         return xml
 
 
-class EditAtRes(namedtuple('EditAtRes', 'error')):
+class EditAtRes(namedtuple('EditAtRes', 'error focused qed old')):
     '''The response of Edit_at call.'''
     __slots__ = ()
 
@@ -306,8 +306,16 @@ class EditAtRes(namedtuple('EditAtRes', 'error')):
         assert xml.tag == 'value'
         if xml.attrib['val'] == 'good':
             content = _data_from_xml(xml[0])
-            return cls(None)
-        return cls(ErrorValue.from_xml(xml))
+            if isinstance(content, UnionL):
+                focused = None
+                qed = None
+                old = None
+            elif isinstance(content, UnionR):
+                focused = content.value[0]
+                qed = content.value[1][0]
+                old = content.value[1][1]
+            return cls(None, focused, qed, old)
+        return cls(ErrorValue.from_xml(xml), None, None, None)
 
 
 class GoalReq(namedtuple('GoalReq', '')):
