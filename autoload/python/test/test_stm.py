@@ -3,7 +3,7 @@
 from unittest import TestCase
 from unittest.mock import Mock
 
-from coqide.stm import _State
+from coqide.stm import _State, _StateList
 from coqide.types import StateID, Sentence, Mark
 
 
@@ -59,3 +59,86 @@ class TestState(TestCase):
 
         mark = state.offset_to_mark(18)
         self.assertEqual(mark, Mark(2, 8))
+
+
+class TestStateList(TestCase):
+    '''Test class `coqide.stm._StateList`.'''
+
+    def test_init(self):
+        '''Test method `init`.'''
+        slist = _StateList()
+        inits = _State.initial(StateID(1))
+        slist.init(inits)
+        self.assertEqual(slist.find_by_id(StateID(1)), inits)
+        self.assertEqual(slist.find_by_mark(Mark(1, 1)), inits)
+        self.assertEqual(list(slist.iter_after(inits)), [])
+
+    def test_find_by_mark(self):
+        '''Test method `find_by_mark`.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta2, sta3)
+        self.assertEqual(slist.find_by_mark(Mark(2, 4)), sta2)
+        self.assertEqual(slist.find_by_mark(Mark(3, 1)), sta3)
+
+    def test_insert_end(self):
+        '''Test inserting at the end.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta2, sta3)
+        self.assertEqual(list(slist.iter_after(sta1)), [sta2, sta3])
+
+    def test_insert_middle(self):
+        '''Test inserting in the middle.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta1, sta3)
+        self.assertEqual(list(slist.iter_after(sta1)), [sta3, sta2])
+
+    def test_remove_between(self):
+        '''Test method `remove_between`.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta2, sta3)
+        slist.remove_between(sta1, sta2)
+        self.assertEqual(list(slist.iter_after(sta1)), [sta3])
+
+    def test_remove_between_end(self):
+        '''Test method `remove_between` to the end.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta2, sta3)
+        slist.remove_between(sta1, sta3)
+        self.assertEqual(list(slist.iter_after(sta1)), [])
+
+    def test_remove_after(self):
+        '''Test method `remove_after`.'''
+        slist = _StateList()
+        sta1 = _State.initial(StateID(1))
+        slist.init(sta1)
+        sta2 = _State(StateID(2), Sentence('', Mark(1, 1), Mark(2, 3)), None)
+        slist.insert(sta1, sta2)
+        sta3 = _State(StateID(3), Sentence('', Mark(2, 3), Mark(2, 10)), None)
+        slist.insert(sta2, sta3)
+        slist.remove_after(sta1)
+        self.assertEqual(list(slist.iter_after(sta1)), [])

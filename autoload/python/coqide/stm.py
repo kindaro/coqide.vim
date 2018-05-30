@@ -95,7 +95,7 @@ class _StateList:
 
     def init(self, state):
         '''Initialize the state list with the initial state.'''
-        initial_node = {'state': state, 'prev': None, 'next': None}
+        initial_node = {'state': state, 'next': None}
         self._head_node = initial_node
         self._node_map[state.state_id] = initial_node
 
@@ -114,13 +114,13 @@ class _StateList:
                 break
             prev_node = node
             node = node['next']
-        return prev_node.state
+        return prev_node['state']
 
     def insert(self, prev_state, state):
         '''Insert the new `state` after `prev_state`.'''
         prev_node = self._node_map[prev_state.state_id]
-        node = {'state': state, 'prev': prev_node, 'next': prev_node['next']}
-        prev_node['next']['prev'] = node
+        node = {'state': state, 'next': prev_node['next']}
+        self._node_map[state.state_id] = node
         prev_node['next'] = node
 
     def iter_between(self, begin, end):
@@ -128,28 +128,34 @@ class _StateList:
         node = self._node_map[begin.state_id]['next']
         end = self._node_map[end.state_id]['next']
         while node and node != end:
-            yield node
+            yield node['state']
             node = node['next']
 
     def iter_after(self, begin):
         '''Return an iterator from the next of `begin` to the end.'''
         node = self._node_map[begin.state_id]['next']
         while node:
-            yield node
+            yield node['state']
             node = node['next']
 
     def remove_between(self, begin, end):
         '''Remove the states from the next of `begin` to `end` (inclusive).'''
         begin_node = self._node_map[begin.state_id]
         end_node = self._node_map[end.state_id]
+
+        for state in self.iter_between(begin, end):
+            del self._node_map[state.state_id]
+
         post_end_node = end_node['next']
         begin_node['next'] = post_end_node
-        if post_end_node:
-            post_end_node['prev'] = begin_node
 
     def remove_after(self, begin):
         '''Remove the states from the next of `begin` to the end.'''
         begin_node = self._node_map[begin.state_id]
+
+        for state in self.iter_after(begin):
+            del self._node_map[state.state_id]
+
         begin_node['next'] = None
 
 
