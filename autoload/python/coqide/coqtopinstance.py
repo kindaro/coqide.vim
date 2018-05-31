@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''Coqtop process handle.'''
 
-from queue import Queue
+from queue import Queue, Empty
 from subprocess import Popen, PIPE, TimeoutExpired
 from threading import Thread, Lock
 import xml.etree.ElementTree as ET
@@ -27,9 +27,7 @@ class _CoqtopReader:
         self._pipe = pipe
         self._closed = False
         self._thread = Thread(target=self._thread_entry)
-        self._answer_queue = Queue()
-        self._feedbacks_lock = Lock()
-        self._feedbacks = []
+        self._res_queue = Queue()
 
     def start(self):
         '''Start the processor thread.'''
@@ -39,23 +37,28 @@ class _CoqtopReader:
         '''Wait for the thread to quit.'''
         self._thread.join()
 
-    def get_answer(self):
-        '''Get a <value /> XML from the coqtop process.
+    def get_response(self):
+        '''Get a response from coqtop process.
 
         Raise `CoqtopQuit` if the process terminates.
         '''
-        answer = self._answer_queue.get()
-        if answer is None or self._closed:
+        res = self._res_queue.get()
+        if res is None or self._closed:
             raise CoqtopQuit()
-        return answer
+        return res
 
-    def get_feedbacks(self):
-        '''Get the list of all the received XML feedbacks.
+    def get_responses_nowait(self):
+        '''Get all the available responses.
 
         The method is non-blocking.'''
-        with self._feedbacks_lock:
-            ret = self._feedbacks
-            self._feedbacks = []
+        ret = []
+        try:
+            while True:
+                res = self._res_queue.get_nowait()
+                if res is None or self._closed:
+                    break
+        except Empty:
+            pass
         return ret
 
     def _thread_entry(self):
@@ -64,7 +67,7 @@ class _CoqtopReader:
             data = self._pipe.read1(1000)
             if not data:
                 self._closed = True
-                self._answer_queue.put(None)
+                self._res_queue.put(None)
                 break
 
             chunks.append(data)
@@ -76,15 +79,6 @@ class _CoqtopReader:
                 chunks = []
             except ET.ParseError:
                 pass
-
-    def _process_output(self, xml):
-        if xml.tag == 'feedback':
-            with self._feedbacks_lock:
-                self._feedbacks.append(xml)
-        elif xml.tag == 'value':
-            self._answer_queue.put(xml)
-        else:
-            pass
 
 
 class CoqtopInstance:
@@ -104,7 +98,7 @@ class CoqtopInstance:
 
     def call(self, rtype, req):
         '''Send the request `req` of request type `rtype` to the coqtop
-        process and return the result.
+        process.
         '''
         if self._proc is None:
             raise RuntimeError('CoqtopInstance not spawned.')
@@ -112,9 +106,26 @@ class CoqtopInstance:
         req_bytes = ET.tostring(req_xml)
         self._proc.stdin.write(req_bytes)
         self._proc.stdin.flush()
-        out_xml = self._reader.get_answer()
-        res = xp.res_from_xml(rtype, out_xml)
-        return res
+
+    def get_response(self, rtype):
+        '''Get a reponse from coqtop.
+
+        If the response is a value, return `('value', value_dict)`
+        where `value_dict` is decoded from XML according to the
+        request type `rtype`.
+
+        If the response is a feedback, return `('feedback',
+        fb_dict)` where `fb_dict` is decoded from XML as a
+        feedback.'''
+
+        xml = self._reader.get_response()
+        if xml.tag == 'feedback':
+            return ('feedback', xp.feedback_from_xml(xml))
+        elif xml.tag == 'value':
+            return ('value', xp.res_from_xml(rtype, xml))
+        else:
+            raise ValueError('Bad coqtop response: {}'.format(
+                ET.tostring(xml)))
 
     def close(self):
         '''Terminate the coqtop process.'''
@@ -136,4 +147,4 @@ class CoqtopInstance:
         '''Read all the available feedbacks.'''
         if self._proc is None:
             raise RuntimeError('CoqtopInstance not spawned.')
-        return list(map(xp.feedback_from_xml, self._reader.get_feedbacks()))
+        return list(map(xp.feedback_from_xml, self._reader.get_responses_nowait()))

@@ -28,11 +28,13 @@ class TestCoqtopInstance(unittest.TestCase):
 
         xml_str = '<value val="good"><state_id val="42" /></value>'
         xml = ET.fromstring(xml_str)
-        reader_mock.return_value.get_answer.side_effect = [xml]
+        reader_mock.return_value.get_response.side_effect = [xml]
 
-        res = inst.call('init', {})
+        inst.call('init', {})
+        tag, res = inst.get_response('init')
 
         write_mock = popen_mock.return_value.stdin.write
         write_mock.assert_called_once_with(
             b'<call val="Init"><option val="none" /></call>')
+        self.assertEqual(tag, 'value')
         self.assertEqual(res, ({'init_state_id': xp.StateID(42)}, None))
