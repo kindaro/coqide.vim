@@ -37,18 +37,19 @@ class _State:
         for match in self._matches:
             match.remove()
         self._matches.clear()
+        self._flag = flag
 
         if flag is None:
             return
 
-        whole_match = self._view.new_highlight(
+        whole_match = self._view.new_match(
             self.state_id, self.sentence.start, self.sentence.stop, flag)
         self._matches.append(whole_match)
 
         if flag == 'error' and loc and loc.start and loc.stop:
             part_start = self.offset_to_mark(loc.start)
             part_stop = self.offset_to_mark(loc.stop)
-            part_match = self._view.new_highlight(
+            part_match = self._view.new_match(
                 self.state_id, part_start, part_stop, 'error_part')
             self._matches.append(part_match)
 
@@ -162,15 +163,19 @@ class _StateList:
 class STM:
     '''The Coq state machine.'''
 
-    def __init__(self, coqtop, view):
+    def __init__(self, coqtop, view, fb_handler):
         self._coqtop = coqtop
         self._view = view
+        self._fb_handler = fb_handler
         self._state_list = _StateList()
         self._tip_state = None
 
     def init(self):
         '''Initialize the state machine.'''
-        res = self._coqtop.call('init', {})
+        self._coqtop.call('init', {})
+        res, err = self._get_value_response()
+        if err:
+            raise RuntimeError(err['message'])
         state = _State.initial(res['init_state_id'])
         self._state_list.init(state)
         self._tip_state = state
@@ -179,7 +184,6 @@ class STM:
         '''Add a list of sentences after the tip state.
         '''
         if self._tip_state.has_error():
-            self._view.set_cursor(self._tip_state.sentence.start)
             self._view.show_message('error', 'Fix the error of the sentence.')
             return
 
@@ -198,15 +202,27 @@ class STM:
 
     def get_tip_stop(self):
         '''Return the stop mark of the tip state.'''
-        return self._tip_state.sentence.stop
+        if self._tip_state.sentence:
+            return self._tip_state.sentence.stop
+        return Mark(1, 1)
+
+    def _get_value_response(self):
+        '''Get responses from coqtop and return the first value response.
+
+        The feedback responses are processed by method `process_feedback`.'''
+        tag, response = self._coqtop.get_response()
+        while tag == 'feedback':
+            self.process_feedback(response)
+        return response
 
     def _add_one(self, sentence):
-        res, err = self._coqtop.call('add', {
+        self._coqtop.call('add', {
             'command': sentence.text,
             'edit_id': -1,
             'state_id': self._tip_state.state_id,
             'verbose': True,
         })
+        res, err = self._get_value_response()
 
         if err:
             state = _State(StateID(-1), sentence, self._view)
@@ -229,8 +245,8 @@ class STM:
     def _edit_at_state(self, state):
         '''Edit at `state`.'''
 
-        res, err = self._coqtop.call('edit_at', {
-            'state_id': state.state_id})
+        self._coqtop.call('edit_at', {'state_id': state.state_id})
+        res, err = self._get_value_response()
 
         if err:
             good_id = res['state_id']
@@ -253,7 +269,8 @@ class STM:
 
     def _get_goals(self):
         '''Get the goals of the tip state.'''
-        res, err = self._coqtop.call('goal', {})
+        self._coqtop.call('goal', {})
+        res, err = self._get_value_response()
 
         if err:
             state_id = res['state_id']
@@ -269,7 +286,7 @@ class STM:
 
     def _on_processed(self, feedback):
         state = self._state_list.find_by_id(feedback['state_id'])
-        if state.get_flag() is None:
+        if state.get_flag() in (None, 'sent'):
             state.set_flag('verified')
 
     def _on_message(self, feedback):
@@ -290,9 +307,10 @@ class STM:
     }
     '''The handlers for each feedback.'''
 
-    def process_feedbacks(self, feedbacks):
-        '''Process the given list of feedbacks.'''
-        for feedback in feedbacks:
-            fb_type = feedback['type']
-            if fb_type in self._FEEDBACK_HANDLERS:
-                self._FEEDBACK_HANDLERS[fb_type](self, feedback)
+    def process_feedback(self, feedback):
+        '''Process the given feedback.'''
+        fb_type = feedback['type']
+        if fb_type in self._FEEDBACK_HANDLERS:
+            self._FEEDBACK_HANDLERS[fb_type](self, feedback)
+        else:
+            self._fb_handler(feedback)
