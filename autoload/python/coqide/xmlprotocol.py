@@ -293,7 +293,11 @@ def _goal_res_from_xml(xml):
     if xml.attrib['val'] == 'fail':
         return None, _error_value_from_xml(xml)
     content = _data_from_xml(xml[0])
-    return {'goals': content}, None
+    if isinstance(content, Some):
+        goals = content.val
+    else:
+        goals = Goals([], [], [], [])
+    return {'goals': goals}, None
 
 
 _REQ_CONVERTERS = {

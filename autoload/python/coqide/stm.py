@@ -15,12 +15,12 @@ class _State:
         self.sentence = sentence
         self._flag = None
         self._view = view
-        self._matches = []
+        self._match_ids = []
+        self._next_rev_num = 1
 
     def move(self, line_offset):
         '''Move the position of the sentence.'''
-        for match in self._matches:
-            match.move(line_offset)
+        self._view.move_match(self.state_id, line_offset)
 
     def set_flag(self, flag, loc=None):
         '''Set the flag of the state to `flag` to indicate in which stage
@@ -34,24 +34,31 @@ class _State:
 
         If `flag == "error"`, `loc` is the tuple marking the error region.
         '''
-        for match in self._matches:
-            match.remove()
-        self._matches.clear()
         self._flag = flag
+        for match_id in self._match_ids:
+            self._view.remove_match(match_id)
+        self._match_ids.clear()
 
         if flag is None:
             return
 
-        whole_match = self._view.new_match(
-            self.state_id, self.sentence.start, self.sentence.stop, flag)
-        self._matches.append(whole_match)
+        new_match_id = self._alloc_match_id()
+        self._view.new_match(new_match_id, self.sentence.start,
+                             self.sentence.stop, flag)
+        self._match_ids.append(new_match_id)
 
         if flag == 'error' and loc and loc.start and loc.stop:
+            new_match_id = self._alloc_match_id()
             part_start = self.offset_to_mark(loc.start)
             part_stop = self.offset_to_mark(loc.stop)
-            part_match = self._view.new_match(
-                self.state_id, part_start, part_stop, 'error_part')
-            self._matches.append(part_match)
+            self._view.new_match(new_match_id, part_start,
+                                 part_stop, 'error_part')
+            self._match_ids.append(new_match_id)
+
+    def _alloc_match_id(self):
+        new_match_id = (self.state_id, self._next_rev_num)
+        self._next_rev_num += 1
+        return new_match_id
 
     def get_flag(self):
         '''Return the flag of the state.'''
@@ -92,17 +99,22 @@ class _StateList:
 
     def __init__(self):
         self._head_node = None
-        self._node_map = {}
+        self._state_id_map = {}
+        self._sentence_set = set()
 
     def init(self, state):
         '''Initialize the state list with the initial state.'''
         initial_node = {'state': state, 'next': None}
         self._head_node = initial_node
-        self._node_map[state.state_id] = initial_node
+        self._state_id_map[state.state_id] = initial_node
+
+    def find_prev(self, state_id):
+        '''Return the previous state of `state_id`.'''
+        return self._state_id_map[state_id]['prev']['state']
 
     def find_by_id(self, state_id):
         '''Return the state by the state id.'''
-        return self._node_map[state_id]['state']
+        return self._state_id_map[state_id]['state']
 
     def find_by_mark(self, mark):
         '''Return the state before `mark`.'''
@@ -117,45 +129,53 @@ class _StateList:
             node = node['next']
         return prev_node['state']
 
+    def has_sentence(self, sentence):
+        '''Return True if the sentence is in the list.'''
+        return sentence in self._sentence_set
+
     def insert(self, prev_state, state):
         '''Insert the new `state` after `prev_state`.'''
-        prev_node = self._node_map[prev_state.state_id]
+        assert not self.has_sentence(state.sentence)
+        prev_node = self._state_id_map[prev_state.state_id]
         node = {'state': state, 'next': prev_node['next']}
-        self._node_map[state.state_id] = node
+        self._state_id_map[state.state_id] = node
         prev_node['next'] = node
+        self._sentence_set.add(state.sentence)
 
     def iter_between(self, begin, end):
         '''Return an iterator from the next of `begin` to `end` (inclusive).'''
-        node = self._node_map[begin.state_id]['next']
-        end = self._node_map[end.state_id]['next']
+        node = self._state_id_map[begin.state_id]['next']
+        end = self._state_id_map[end.state_id]['next']
         while node and node != end:
             yield node['state']
             node = node['next']
 
     def iter_after(self, begin):
         '''Return an iterator from the next of `begin` to the end.'''
-        node = self._node_map[begin.state_id]['next']
+        node = self._state_id_map[begin.state_id]['next']
         while node:
             yield node['state']
             node = node['next']
 
     def remove_between(self, begin, end):
         '''Remove the states from the next of `begin` to `end` (inclusive).'''
-        begin_node = self._node_map[begin.state_id]
-        end_node = self._node_map[end.state_id]
+        begin_node = self._state_id_map[begin.state_id]
+        end_node = self._state_id_map[end.state_id]
 
         for state in self.iter_between(begin, end):
-            del self._node_map[state.state_id]
+            del self._state_id_map[state.state_id]
+            self._sentence_set.remove(state.sentence)
 
         post_end_node = end_node['next']
         begin_node['next'] = post_end_node
 
     def remove_after(self, begin):
         '''Remove the states from the next of `begin` to the end.'''
-        begin_node = self._node_map[begin.state_id]
+        begin_node = self._state_id_map[begin.state_id]
 
         for state in self.iter_after(begin):
-            del self._node_map[state.state_id]
+            del self._state_id_map[state.state_id]
+            self._sentence_set.remove(state.sentence)
 
         begin_node['next'] = None
 
@@ -188,10 +208,19 @@ class STM:
             return
 
         for sentence in sentences:
+            if self._state_list.has_sentence(sentence):
+                continue
+
             state = self._add_one(sentence)
             if state.has_error():
                 return
 
+        self._get_goals()
+
+    def edit_at_prev(self):
+        '''Edit at the previous state of the tip state.'''
+        state = self._state_list.find_prev(self._tip_state.state_id)
+        self._edit_at_state(state)
         self._get_goals()
 
     def edit_at(self, mark):
