@@ -20,7 +20,7 @@ class TestState(TestCase):
         state = _State(StateID(3), self._SENTENCE_EX, view_mock)
         state.set_flag(flag)
         view_mock.new_match.assert_called_once_with(
-            StateID(3), Mark(1, 1), Mark(2, 8), flag)
+            (StateID(3), 1), Mark(1, 1), Mark(2, 8), flag)
 
     def test_set_sent_flag(self):
         '''Test setting the flag to "sent".'''
@@ -40,11 +40,11 @@ class TestState(TestCase):
         state = _State(StateID(3), self._SENTENCE_EX, view_mock)
         state.set_flag('sent')
         view_mock.new_match.assert_called_once_with(
-            StateID(3), Mark(1, 1), Mark(2, 8), 'sent')
+            (StateID(3), 1), Mark(1, 1), Mark(2, 8), 'sent')
         state.set_flag('verified')
-        view_mock.new_match.return_value.remove.assert_called_once()
+        view_mock.remove_match.assert_called_once_with((StateID(3), 1))
         view_mock.new_match.assert_called_with(
-            StateID(3), Mark(1, 1), Mark(2, 8), 'verified')
+            (StateID(3), 2), Mark(1, 1), Mark(2, 8), 'verified')
 
     def test_offset_to_mark(self):
         '''Test the function transforming offsets in the sentence to marks.'''
@@ -168,9 +168,6 @@ class TestSTM(TestCase):
             ('value', ({'state_id': StateID(2), 'closed_proof': None}, None)),
             ('value', ({'state_id': StateID(3), 'closed_proof': None}, None)),
             ('value', ({'goals': None}, None))]
-        match2 = Mock()
-        match3 = Mock()
-        view.new_match.side_effect = [match2, match3]
 
         stm = STM(coqtop, view, None)
         stm.init()
@@ -181,11 +178,11 @@ class TestSTM(TestCase):
             coqtop.reset_mock(return_value=True, side_effect=True)
             view.reset_mock(return_value=True, side_effect=True)
 
-        return stm, coqtop, view, [match2, match3]
+        return stm, coqtop, view
 
     def test_add_sentences(self):
         '''Test method `add` on adding a list of sentences.'''
-        stm, coqtop, view, _ = self._new_stm(reset_mocks=False)
+        stm, coqtop, view = self._new_stm(reset_mocks=False)
 
         self.assertEqual(stm.get_tip_stop(), Mark(4, 1))
         self.assertListEqual(
@@ -198,12 +195,12 @@ class TestSTM(TestCase):
              call('goal', {})])
         self.assertListEqual(
             view.new_match.call_args_list,
-            [call(StateID(2), Mark(1, 1), Mark(3, 1), 'sent'),
-             call(StateID(3), Mark(3, 1), Mark(4, 1), 'sent')])
+            [call((StateID(2), 1), Mark(1, 1), Mark(3, 1), 'sent'),
+             call((StateID(3), 1), Mark(3, 1), Mark(4, 1), 'sent')])
 
     def test_edit_at(self):
         '''Test method `edit_at` on editing at a specific mark.'''
-        stm, coqtop, _, matches = self._new_stm(reset_mocks=False)
+        stm, coqtop, view = self._new_stm(reset_mocks=False)
 
         coqtop.reset_mock(side_effect=True)
         coqtop.get_response.side_effect = [
@@ -217,11 +214,11 @@ class TestSTM(TestCase):
             coqtop.call.call_args_list,
             [call('edit_at', {'state_id': StateID(2)}),
              call('goal', {})])
-        matches[1].remove.assert_called_once()
+        view.remove_match.assert_called_once_with((StateID(3), 1))
 
     def test_process_axiom(self):
         '''Test method `process_feedback` on feedback "axiom".'''
-        stm, _, view, [match2, _] = self._new_stm()
+        stm, _, view = self._new_stm()
 
         match2_new = Mock()
         view.new_match.side_effect = [match2_new]
@@ -229,13 +226,13 @@ class TestSTM(TestCase):
         stm.process_feedback(
             {'type': 'axiom', 'state_id': StateID(2), 'content': {}})
 
-        match2.remove.assert_called_once()
+        view.remove_match.assert_called_once_with((StateID(2), 1))
         view.new_match.assert_called_once_with(
-            StateID(2), Mark(1, 1), Mark(3, 1), 'axiom')
+            (StateID(2), 2), Mark(1, 1), Mark(3, 1), 'axiom')
 
     def test_process_verified(self):
         '''Test method `process_feedback` on feedback "processed".'''
-        stm, _, view, [match2, _] = self._new_stm()
+        stm, _, view = self._new_stm()
 
         match2_new = Mock()
         view.new_match.side_effect = [match2_new]
@@ -243,13 +240,13 @@ class TestSTM(TestCase):
         stm.process_feedback(
             {'type': 'processed', 'state_id': StateID(2), 'content': {}})
 
-        match2.remove.assert_called_once()
+        view.remove_match.assert_called_once_with((StateID(2), 1))
         view.new_match.assert_called_once_with(
-            StateID(2), Mark(1, 1), Mark(3, 1), 'verified')
+            (StateID(2), 2), Mark(1, 1), Mark(3, 1), 'verified')
 
     def test_process_processed_axiom(self):
         '''Test method `process_feedback` on feedback "processed" with "axiom".'''
-        stm, _, view, [match2, _] = self._new_stm()
+        stm, _, view = self._new_stm()
 
         match2_new = Mock()
         view.new_match.side_effect = [match2_new]
@@ -259,13 +256,13 @@ class TestSTM(TestCase):
         stm.process_feedback(
             {'type': 'processed', 'state_id': StateID(2), 'content': {}})
 
-        match2.remove.assert_called_once()
+        view.remove_match.assert_called_once_with((StateID(2), 1))
         view.new_match.assert_called_once_with(
-            StateID(2), Mark(1, 1), Mark(3, 1), 'axiom')
+            (StateID(2), 2), Mark(1, 1), Mark(3, 1), 'axiom')
 
     def test_process_plain_message(self):
         '''Test method `process_feedback` on non-error messages.'''
-        stm, _, view, _ = self._new_stm()
+        stm, _, view = self._new_stm()
 
         stm.process_feedback(
             {'type': 'message',
