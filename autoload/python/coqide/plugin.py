@@ -4,8 +4,8 @@ from functools import wraps
 from queue import Queue
 from threading import Thread, Lock
 
-from coqide import vimsupport as vims
-from coqide.views import TabpageView
+from coqide.vimsupport import VimSupport
+from coqide.views import TabpageView, SessionView
 from coqide.session import Session
 
 
@@ -14,12 +14,12 @@ class _ThreadExecutor:
     '''
 
     def __init__(self):
-        self._thread = Thread(target=self._thread_main)
-        self._thread.start()
         self._task_queue = Queue()
         self._closed = False
         self._task_count = 0
         self._task_count_lock = Lock()
+        self._thread = Thread(target=self._thread_main)
+        self._thread.start()
 
     def submit(self, func, *args, **kwargs):
         '''Schedule the task `fn(*args, **kwargs)` to be executed.'''
@@ -55,82 +55,112 @@ class _ThreadExecutor:
         return self._task_count > 0
 
 
+def _in_session(func):
+    '''Decorate a method so that the first argument is the session object
+    and the second the buffer.
+
+    The method will not be called if it is not in a Coq session.'''
+    @wraps(func)
+    def _wrapped(self, *args, **kwargs):
+        buf = self._vim.get_buffer()                     # pylint: disable=W0212
+        session = self._sessions.get(buf.number, None)   # pylint: disable=W0212
+        if session is None:
+            print('Not in a Coq session')
+            return
+        func(self, session, buf, *args, **kwargs)
+    return _wrapped
+
+
+def _not_busy(func):
+    '''Decorate a method so that it is called only if the task executor
+    is not busy.'''
+    @wraps(func)
+    def _wrapped(self, *args, **kwargs):
+        if not self._executor.is_busy():                 # pylint: disable=W0212
+            func(self, *args, **kwargs)
+    return _wrapped
+
+
+def _draw_views(func):
+    '''Draw the changes of views to Vim before and after the function
+    is called.'''
+    @wraps(func)
+    def _wrapped(self, *args, **kwargs):
+        self.draw_views()
+        try:
+            func(self, *args, **kwargs)
+        finally:
+            self.draw_views()
+    return _wrapped
+
+
 class Plugin:
     '''The plugin entry point.'''
 
     def __init__(self):
+        self._vim = VimSupport()
         self._sessions = {}
-        self._tabpage_view = TabpageView()
-        self._executor = _ThreadExecutor()
+        self._session_views = {}
+        self._tabpage_view = TabpageView(self._vim)
+        self._worker = _ThreadExecutor()
 
-    @staticmethod
-    def _in_session(func):
-        '''Decorate a method so that the first argument is the session object
-        and the second the buffer.
-
-        The method will not be called if it is not in a Coq session.'''
-        @wraps(func)
-        def _wrapped(self, *args, **kwargs):
-            buf = vims.get_buffer()
-            session = self._sessions.get(buf.number, None)   # pylint: disable=W0212
-            if session is None:
-                print('Not in a Coq session')
-                return
-            func(self, session, buf, *args, **kwargs)
-        return _wrapped
-
-    @staticmethod
-    def _not_busy(func):
-        '''Decorate a method so that it is called only if the task executor
-        is not busy.'''
-        @wraps(func)
-        def _wrapped(self, *args, **kwargs):
-            if not self._executor.is_busy():                 # pylint: disable=W0212
-                func(self, *args, **kwargs)
-        return _wrapped
-
+    @_draw_views
     def new_session(self):
         '''Create a new session on the current buffer.'''
-        bufnr = vims.get_buffer().number
+        bufnr = self._vim.get_buffer().number
         if bufnr in self._sessions:
             print('Already in a Coq session')
             return
-        self._sessions[bufnr] = Session(bufnr, self._tabpage_view, self._executor)
+        session_view = SessionView(bufnr, self._tabpage_view, self._vim)
+        session = Session(session_view, self._vim, self._worker)
+        self._sessions[bufnr] = session
+        self._session_views[bufnr] = session_view
 
+    @_draw_views
     @_in_session
     def close_session(self, session, buf):
         '''Close the session on the current buffer.'''
         session.close()
         del self._sessions[buf.number]
+        del self._session_views[buf.number]
 
+    @_draw_views
     @_in_session
     @_not_busy
     def forward_one(self, session, _):     # pylint: disable=R0201
         '''Forward one sentence.'''
         session.forward_one()
 
+    @_draw_views
     @_in_session
     @_not_busy
     def backward_one(self, session, _):    # pylint: disable=R0201
         '''Backward one sentence.'''
         session.backward_one()
 
+    @_draw_views
     @_in_session
     @_not_busy
     def to_cursor(self, session, _):       # pylint: disable=R0201
         '''Run to cursor.'''
         session.to_cursor()
 
+    @_draw_views
     def redraw_goals(self):
         '''Redraw the goals to the goal window.'''
         self._tabpage_view.redraw_goals()
 
+    @_draw_views
     def redraw_messages(self):
         '''Redraw the messages to the message window.'''
         self._tabpage_view.redraw_messages()
 
-    def draw(self):
-        '''Draw the modified parts to the Vim windows.'''
+    def cleanup(self):
+        '''Cleanup the plugin.'''
+        self._worker.shutdown()
+
+    def draw_views(self):
+        '''Draw the changes of the views to Vim.'''
         self._tabpage_view.draw()
-        for session in self._sessions.values():
-            session.draw_view()
+        for view in self._session_views.values():
+            view.draw()
