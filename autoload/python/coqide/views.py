@@ -4,9 +4,6 @@
 from collections import namedtuple
 from threading import Lock
 
-from coqide import vimsupport as vims
-from coqide.stm import STM
-
 
 _MatchArg = namedtuple('_MatchArg', 'start stop type')
 
@@ -77,6 +74,10 @@ class _TaskExecutor:
                 return True
             return False
 
+    def has_task(self):
+        '''Return True if the executor has scheduled tasks.'''
+        return len(self._task_list) > 0
+
     def run_all(self):
         '''Run all the tasks.'''
         with self._lock:
@@ -97,101 +98,111 @@ class _Match:
         'verified': 'CoqStcVerified',
     }
 
-    def __init__(self, match_id, match_arg):
-        self.match_id = match_id
+    def __init__(self, match_arg, vim):
         self.match_arg = match_arg
-        self._vim_match_id = None
+        self._win_match_id = {}
+        self._vim = vim
 
-    def show(self):
-        '''Show the match in Vim.'''
-        assert self._vim_match_id is None
+    def show(self, winid):
+        '''Show the match in the given window.
 
-        start = self.match_arg.start
-        stop = self.match_arg.stop
-        hlgroup = self._HLGROUPS[self.match_arg.type]
-        self._vim_match_id = vims.add_match(start, stop, hlgroup)
+        The method assumes that the current window is the target window.
+        '''
+        if winid in self._win_match_id:
+            return
 
-    def hide(self):
-        '''Hide the match from Vim.'''
-        assert self._vim_match_id is not None
-        vims.del_match(self._vim_match_id)
-        self._vim_match_id = None
+        start, stop, match_type = self.match_arg
+        hlgroup = self._HLGROUPS[match_type]
+        self._win_match_id[winid] = self._vim.add_match(start, stop, hlgroup)
 
-    def is_shown(self):
-        '''Return True if the match is shown in Vim.'''
-        return self._vim_match_id is not None
+    def hide(self, winid):
+        '''Hide the match from the given window.
 
-    def remove(self):
-        '''Remove the match.'''
-        if self.is_shown():
-            self.hide()
+        The method assumes that the current window is the target window.
+        '''
+        if winid not in self._win_match_id:
+            return
 
-    def move(self, line_offset):
-        '''Move the match `line_offset` lines down in the window.'''
-        is_shown = self.is_shown()
+        self._vim.del_match(self._win_match_id[winid])
+        del self._win_match_id[winid]
 
-        if is_shown:
-            self.hide()
-
-        start = self.match_arg.start
-        stop = self.match_arg.stop
-        self.match_arg = self.match_arg._replace(
-            start=start._replace(line=start.line + line_offset),
-            stop=stop._replace(line=stop.line + line_offset))
-
-        if is_shown:
-            self.show()
+    def redraw(self, winid):
+        '''Redraw the match.'''
+        if winid in self._win_match_id:
+            self.hide(winid)
+            self.show(winid)
 
 
 class _MatchView:
     '''The matches in a documents.'''
 
-    def __init__(self, bufnr):
-        self._bufnr = bufnr
-        self._active = False
+    def __init__(self, vim):
         self._match_map = {}
-        self._task_executor = _TaskExecutor()
+        self._win_executors = {}
+        self._vim = vim
 
-    def set_active(self):
-        '''Add the matches to the Vim window of the buffer.'''
-        if self._active:
+    def set_active(self, winid):
+        '''Show the view in the window-ID `winid`.'''
+        if winid in self._win_executors:
             return
 
-        self._active = True
-        for match in self._match_map.values():
-            match.show()
+        self._win_executors[winid] = _TaskExecutor()
 
-    def set_inactive(self):
-        '''Remove the matches added to the Vim window.'''
-        if not self._active:
+        with self._vim.in_winid(winid):
+            for match in self._match_map.values():
+                match.show(winid)
+
+    def set_inactive(self, winid):
+        '''Remove the view in the window-ID `winid`.'''
+        if winid not in self._win_executors:
             return
 
-        self._active = False
-        for match in self._match_map.values():
-            match.hide()
+        del self._win_executors[winid]
+
+        with self._vim.in_winid(winid):
+            for match in self._match_map.values():
+                match.hide(winid)
 
     def add(self, match_id, start, stop, match_type):
         ''''Add a match to the view.'''
         match_arg = _MatchArg(start, stop, match_type)
-        match = _Match(match_id, match_arg)
+        match = _Match(match_arg, self._vim)
         self._match_map[match_id] = match
-        self._task_executor.add(match_id, match.show)
+
+        for winid, executor in self._win_executors.items():
+            executor.add(match_id, match.show, winid)
 
     def move(self, match_id, line_offset):
         '''Move the match `line_offset` lines down.'''
         match = self._match_map[match_id]
-        self._task_executor.add_nokey(match.move, line_offset)
+
+        start, stop, _ = match.match_arg
+        match.match_arg = match.match_arg._replace(
+            start=start._replace(line=start.line + line_offset),
+            stop=stop._replace(line=stop.line + line_offset))
+
+        for winid, executor in self._win_executors.items():
+            executor.add_nokey(match.redraw, winid)
 
     def remove(self, match_id):
         '''Remove the match.'''
-        if not self._task_executor.cancel(match_id):
-            match = self._match_map[match_id]
-            del self._match_map[match_id]
-            self._task_executor.add_nokey(match.remove)
+        match = self._match_map[match_id]
+        del self._match_map[match_id]
+
+        for winid, executor in self._win_executors.items():
+            if not executor.cancel(match_id):
+                executor.add_nokey(match.hide, winid)
 
     def draw(self):
-        '''Draw the matches in the Vim UI.'''
-        self._task_executor.run_all()
+        '''Draw the matches in the Vim window.
+
+        This function only applies the changes since the last time it is called
+        to Vim.
+        '''
+        for winid, executor in self._win_executors.items():
+            if executor.has_task():
+                with self._vim.in_winid(winid):
+                    executor.run_all()
 
 
 class TabpageView:
