@@ -208,57 +208,66 @@ class _MatchView:
 class TabpageView:
     '''The view relating to the tabpage.'''
 
-    def __init__(self):
+    def __init__(self, vim):
         self._goals = None
         self._messages = []
-        self._task_executor = _TaskExecutor()
+        self._vim = vim
+        self._goals_changed = False
+        self._messages_changed = False
 
     def draw(self):
         '''Draw the goals and messages to the goal and message panel.'''
-        self._task_executor.run_all()
+        if self._goals_changed:
+            self.redraw_goals()
+            self._goals_changed = False
+
+        if self._messages_changed:
+            self.redraw_messages()
+            self._messages_changed = False
 
     def redraw_goals(self):
         '''Redraw the goals to the goal window.'''
+        self._vim.set_bufname_lines('^/Goals/$', self._goals.tolines())
 
     def redraw_messages(self):
         '''Redraw the messages to the message window.'''
+        content = []
+        for _, message in self._messages:
+            content.extend(message.split('\n'))
+
+        self._vim.set_bufname_lines('^/Messages/$', content)
 
     def show_message(self, level, message):
         '''Show the message in the message window.'''
         self._messages.append((level, message))
-        self._task_executor.add_nokey(self._do_show_message, level, message)
+        self._messages_changed = True
 
     def set_goals(self, goals):
         '''Show the goals in the goal window.'''
         self._goals = goals
-        self._task_executor.cancel('goal')
-        self._task_executor.add('goal', self._do_set_goals, goals)
+        self._goals_changed = True
 
-    def _do_show_message(self, level, message):
-        pass
-
-    def _do_set_goals(self, goals):
-        pass
+    def clear_messages(self):
+        '''Clear the messages.'''
+        self._messages.clear()
+        self._messages_changed = True
 
 
 class SessionView:
     '''The view relating to a session.'''
 
-    def __init__(self, bufnr, tabpage_view):
+    def __init__(self, bufnr, tabpage_view, vim):
         self._bufnr = bufnr
         self._tabpage_view = tabpage_view
-
-        self._match_view = _MatchView(bufnr)
+        self._match_view = _MatchView(vim)
         self._focused = False
         self._goals = None
         self._messages = []
+        self._vim = vim
 
     def draw(self):
         '''Draw the view in Vim UI.'''
         self._match_view.draw()
-
-    def destroy(self):
-        '''Detach the session view.'''
 
     def show_message(self, level, message):
         '''Show the message in the message window.'''
@@ -278,9 +287,11 @@ class SessionView:
             return
 
         self._focused = True
+        self._tabpage_view.clear_messages()
         for level, message in self._messages:
             self._tabpage_view.show_message(level, message)
-        self._tabpage_view.set_goals(self._goals)
+        if self._goals:
+            self._tabpage_view.set_goals(self._goals)
 
     def unfocus(self):
         '''Unfocus the view.'''
@@ -289,15 +300,17 @@ class SessionView:
         self._focused = False
 
     def set_active(self):
-        '''Set the view as active.'''
-        self._match_view.set_active()
+        '''Set the view as active in the current window.'''
+        winid = self._vim.get_winid()
+        self._match_view.set_active(winid)
         self._tabpage_view.set_goals(self._goals)
         for level, message in self._messages:
             self._tabpage_view.show_message(level, message)
 
     def set_inactive(self):
-        '''Set the view as inactive.'''
-        self._match_view.set_inactive()
+        '''Set the view as inactive in the current window.'''
+        winid = self._vim.get_winid()
+        self._match_view.set_inactive(winid)
 
     def new_match(self, match_id, start, stop, match_type):
         '''Create a new match on the window and return the match object.'''
