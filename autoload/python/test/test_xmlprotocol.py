@@ -95,7 +95,7 @@ class TestValuesFromXml(unittest.TestCase):
         text = ('<value val="good"><option val="none" /></value>')
         xml = ET.fromstring(text)
         res, _ = xp.res_from_xml('goal', xml)
-        self.assertEqual(res, {'goals': None})
+        self.assertEqual(res, {'goals': xp.Goals([], [], [], [])})
 
     def test_goal_res_some(self):
         text = ('<value val="good"><option val="some">'
@@ -111,11 +111,10 @@ class TestValuesFromXml(unittest.TestCase):
         xml = ET.fromstring(text)
         res, _ = xp.res_from_xml('goal', xml)
         self.assertEqual(res, {
-            'goals': xp.Some(
-                xp.Goals(fg=[xp.Goal(id='A',
-                                     hyps=['hyp1', 'hyp2'],
-                                     goal='goal1')],
-                         bg=[([], [])], shelved=[], abandoned=[]))})
+            'goals': xp.Goals(fg=[xp.Goal(id='A',
+                                          hyps=['hyp1', 'hyp2'],
+                                          goal='goal1')],
+                              bg=[([], [])], shelved=[], abandoned=[])})
 
 
 class TestFeedbacksFromXml(unittest.TestCase):

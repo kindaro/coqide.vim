@@ -206,6 +206,12 @@ class TabpageView:
         '''Draw the goals and messages to the goal and message panel.'''
         self._task_executor.run_all()
 
+    def redraw_goals(self):
+        '''Redraw the goals to the goal window.'''
+
+    def redraw_messages(self):
+        '''Redraw the messages to the message window.'''
+
     def show_message(self, level, message):
         '''Show the message in the message window.'''
         self._messages.append((level, message))
