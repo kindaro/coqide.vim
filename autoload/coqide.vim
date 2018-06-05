@@ -10,7 +10,9 @@ import vim
 if not vim.eval('s:current_dir') in sys.path:
     sys.path.append(os.path.join(vim.eval('s:current_dir'), 'python'))
 
-import coqide
+from coqide.plugin import Plugin
+
+plugin = Plugin()
 EOF
 
 if !exists('g:coqide_debug')
@@ -34,7 +36,7 @@ if !exists('g:coqide_auto_clear_message')
 endif
 
 if g:coqide_debug
-    execute 'py3 coqide.setup_debug_log("' . g:coqide_debug_file . '")'
+    execute 'py3 plugin.setup_debug_log("' . g:coqide_debug_file . '")'
 endif
 
 let s:activated = 0
@@ -44,14 +46,15 @@ function! coqide#Activate()
         return
     endif
 
-    py3 ide = coqide.activate()
     let s:activated = 1
 
-    if !exists('s:coqide_auto_deactivate')
-        let s:coqide_auto_deactivate = 1
-        autocmd VimLeavePre * CoqDeactivate
-    endif
-
+    autocmd VimLeavePre * call coqide#Deactivate()
+    command! CoqNewSession call coqide#NewSession()
+    command! CoqCloseSession call coqide#CloseSession()
+    command! CoqForward call coqide#Forward()
+    command! CoqBackward call coqide#Backward()
+    command! CoqToCursor call coqide#ToCursor()
+    command! CoqClearMessages call coqide#ClearMessages()
     command! CoqShowGoal call coqide#ShowGoal()
     command! CoqHideGoal call coqide#HideGoal()
     command! CoqToggleGoal call coqide#ToggleGoal()
@@ -59,7 +62,7 @@ function! coqide#Activate()
     command! CoqHideMessage call coqide#HideMessage()
     command! CoqToggleMessage call coqide#ToggleMessage()
 
-    let s:update_timer = timer_start(300, 'coqide#UpdateUI',
+    let s:update_timer = timer_start(300, 'coqide#ProcessFeedbacks',
                 \ { 'repeat': -1 })
 endfunction
 
@@ -68,12 +71,17 @@ function! coqide#Deactivate()
         return
     endif
 
-    py3 ide.deactivate()
-    py3 ide = None
+    py3 plugin.cleanup()
     let s:activated = 0
 
     call timer_stop(s:update_timer)
 
+    delcommand CoqNewSession
+    delcommand CoqCloseSession
+    delcommand CoqForward
+    delcommand CoqBackward
+    delcommand CoqToCursor
+    delcommand CoqClearMessages
     delcommand CoqShowGoal
     delcommand CoqHideGoal
     delcommand CoqToggleGoal
@@ -83,81 +91,141 @@ function! coqide#Deactivate()
 endfunction
 
 function! coqide#NewSession()
-    py3 ide.new_session()
-
-    call coqide#HandleEvent('Focus')
-    call coqide#HandleEvent('Active')
+    py3 plugin.new_session()
 endfunction
 
 function! coqide#CloseSession()
-    py3 ide.close_session()
-endfunction
-
-function! coqide#CloseSession()
-    py3 ide.close_session()
+    py3 plugin.close_session()
 endfunction
 
 function! coqide#Forward()
     if g:coqide_auto_clear_message
-        call coqide#ClearMessage()
+        call coqide#ClearMessages()
     endif
-    py3 ide.forward()
-    call timer_start(100, 'coqide#UpdateUI')
+    py3 plugin.forward()
+    call timer_start(100, 'coqide#ProcessFeedbacks')
 endfunction
 
 function! coqide#Backward()
     if g:coqide_auto_clear_message
-        call coqide#ClearMessage()
+        call coqide#ClearMessages()
     endif
-    py3 ide.backward()
-    call timer_start(100, 'coqide#UpdateUI')
+    py3 plugin.backward()
+    call timer_start(100, 'coqide#ProcessFeedbacks')
 endfunction
 
 function! coqide#ToCursor()
     if g:coqide_auto_clear_message
-        call coqide#ClearMessage()
+        call coqide#ClearMessages()
     endif
-    py3 ide.to_cursor()
-    call timer_start(100, 'coqide#UpdateUI')
+    py3 plugin.to_cursor()
+    call timer_start(100, 'coqide#ProcessFeedbacks')
 endfunction
 
-function! coqide#ShowGoal()
-    py3 ide.set_goal_visibility('show')
+function! coqide#Focus()
+    py3 plugin.focus()
 endfunction
 
-function! coqide#HideGoal()
-    py3 ide.set_goal_visibility('hide')
+function! coqide#SetActive()
+    py3 plugin.set_active()
 endfunction
 
-function! coqide#ToggleGoal()
-    py3 ide.set_goal_visibility('toggle')
+function! coqide#SetInactive()
+    py3 plugin.set_inactive()
+endfunction
+
+function! coqide#CreateWindow(name, filetype, split_method)
+    execute a:split_method . " " . a:name
+    setlocal buftype=nofile
+    setlocal noswapfile
+    setlocal bufhidden=delete
+    setlocal nospell
+    setlocal nonumber
+    setlocal norelativenumber
+    setlocal nocursorline
+    setlocal nomodifiable
+    setlocal nobuflisted
+    execute "setlocal filetype=" . a:filetype
+endfunction
+
+function! coqide#ShowGoals()
+    if bufwinnr('^/Goals/$') != -1
+        return
+    endif
+
+    let messages_winnr = bufwinnr('^/Messages/$')
+    if  messages_winnr != -1
+        " Create the goal window above the message window.
+        execute messages_winnr . 'wincmd w'
+        call coqide#CreateWindow('/Goals/', 'coq-goals', 'leftabove new')
+    else
+        call coqide#CreateWindow('/Goals/', 'coq-goals', 'rightbelow vnew')
+    endif
+
+    py3 plugin.redraw_goals()
+endfunction
+
+function! coqide#HideGoals()
+    if bufwinnr('^/Goals/$') == -1
+        return
+    endif
+
+    goals_bufnr = bufnr('^/Goals/$')
+    execute goals_bufnr . 'bdelete'
+endfunction
+
+function! coqide#ToggleGoals()
+    if bufwinnr('^/Goals/$') != -1
+        call coqide#HideGoals()
+    else
+        call coqide#ShowGoals()
+    endif
 endfunction
 
 function! coqide#ShowMessage()
-    py3 ide.set_message_visibility('show')
+    if bufwinnr('^/Messages/$') != -1
+        return
+    endif
+
+    let goals_winnr = bufwinnr('^/Goals/$')
+    if  goals_winnr != -1
+        " Create the messages window below the goals window.
+        execute goals_winnr . 'wincmd w'
+        call coqide#CreateWindow('/Messages/', 'coq-messages', 'rightbelow new')
+    else
+        call coqide#CreateWindow('/Messages/', 'coq-messages', 'rightbelow vnew')
+    endif
+
+    py3 plugins.redraw_messages()
 endfunction
 
 function! coqide#HideMessage()
-    py3 ide.set_message_visibility('hide')
+    if bufwinnr('^/Messages/$') == -1
+        return
+    endif
+
+    messages_bufnr = bufnr('^/Messages/$')
+    execute messages_bufnr . 'bdelete'
 endfunction
 
 function! coqide#ToggleMessage()
-    py3 ide.set_message_visibility('toggle')
+    if bufwinnr('^/Messages/$') != -1
+        call coqide#HideMessages()
+    else
+        call coqide#ShowMessages()
+    endif
 endfunction
 
-function! coqide#ClearMessage()
-    py3 ide.clear_message()
+function! coqide#ClearMessages()
+    py3 plugin.clear_messages()
 endfunction
 
-function! coqide#UpdateUI(...)
-    py3 ide.update_ui()
-endfunction
-
-function! coqide#HandleEvent(event)
-    execute 'py3 ide.handle_event("' . a:event . '")'
+function! coqide#ProcessFeedbacks(...)
+    py3 plugin.process_feedbacks()
 endfunction
 
 function! coqide#OnTextChanged()
+    return
     let buflen = line('$')
     let saved_view = winsaveview()
     let [_, cursor_line, _, _] = getpos('.')
@@ -181,27 +249,22 @@ function! coqide#OnTextChanged()
 endfunction
 
 function! coqide#Setup()
-    CoqActivate
-
-    command! -buffer CoqNewSession call coqide#NewSession()
-    command! -buffer CoqCloseSession call coqide#CloseSession()
-    command! -buffer CoqForward call coqide#Forward()
-    command! -buffer CoqBackward call coqide#Backward()
-    command! -buffer CoqToCursor call coqide#ToCursor()
-    command! -buffer CoqClearMessage call coqide#ClearMessage()
+    call coqide#Activate()
 
     if g:coqide_no_mappings == 0
         nnoremap <buffer> <f2> :CoqForward<cr>
         nnoremap <buffer> <f3> :CoqBackward<cr>
         nnoremap <buffer> <f4> :CoqToCursor<cr>
-        inoremap <buffer> <c-e> <esc>:CoqToCursor<cr>a
+        inoremap <buffer> <f2> <esc>:CoqForward<cr>a
+        inoremap <buffer> <f3> <esc>:CoqBackward<cr>a
+        inoremap <buffer> <f4> <esc>:CoqToCursor<cr>a
     endif
 
-    autocmd BufEnter <buffer> call coqide#HandleEvent('Focus')
-    autocmd BufWinEnter <buffer> call coqide#HandleEvent('Active')
-    autocmd BufWinLeave <buffer> call coqide#HandleEvent('Inactive')
-    autocmd TextChanged <buffer> call coqide#OnTextChanged()
-    autocmd TextChangedI <buffer> call coqide#OnTextChanged()
+    autocmd BufEnter <buffer> call coqide#Focus()
+    autocmd BufWinEnter <buffer> call coqide#SetActive()
+    autocmd BufWinLeave <buffer> call coqide#SetInactive()
+    " autocmd TextChanged <buffer> call coqide#OnTextChanged()
+    " autocmd TextChangedI <buffer> call coqide#OnTextChanged()
 
     if g:coqide_auto_close_session == 'unload'
         autocmd BufUnload <buffer> CoqCloseSession
@@ -217,10 +280,7 @@ function! coqide#Setup()
     let b:coqide_last_buflen = line('$')
 endfunction
 
-command! CoqActivate call coqide#Activate()
-command! CoqDeactivate call coqide#Deactivate()
-
-hi default CoqStcProcessing ctermbg=147 guibg=#AAAAFF
-hi default CoqStcProcessed ctermbg=22 guibg=#2F5C00
+hi default CoqStcSent ctermbg=147 guibg=#AAAAFF
 hi default CoqStcAxiom ctermbg=227 guibg=#E8ED51
+hi default CoqStcVerified ctermbg=22 guibg=#2F5C00
 hi link CoqStcError Error
