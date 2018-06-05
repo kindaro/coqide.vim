@@ -227,7 +227,7 @@ class TabpageView:
 
     def redraw_goals(self):
         '''Redraw the goals to the goal window.'''
-        self._vim.set_bufname_lines('^/Goals/$', self._goals.tolines())
+        self._vim.set_bufname_lines('/Goals/', self._goals.tolines())
 
     def redraw_messages(self):
         '''Redraw the messages to the message window.'''
@@ -235,7 +235,7 @@ class TabpageView:
         for _, message in self._messages:
             content.extend(message.split('\n'))
 
-        self._vim.set_bufname_lines('^/Messages/$', content)
+        self._vim.set_bufname_lines('/Messages/', content)
 
     def show_message(self, level, message):
         '''Show the message in the message window.'''

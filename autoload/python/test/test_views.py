@@ -186,7 +186,7 @@ class TestTabpageView(TestCase):
         goal1.tolines.assert_not_called()
         goal2.tolines.assert_called_once()
         vim.set_bufname_lines.assert_called_once_with(
-            '^/Goals/$', goal2.tolines.return_value)
+            '/Goals/', goal2.tolines.return_value)
 
     def test_set_messages(self):
         '''Test method `set_messages`.'''
@@ -198,7 +198,7 @@ class TestTabpageView(TestCase):
         view.show_message(*msg2)
         view.draw()
         vim.set_bufname_lines.assert_called_once_with(
-            '^/Messages/$', ['msg1', 'msg2', 'msg3'])
+            '/Messages/', ['msg1', 'msg2', 'msg3'])
 
 
 class TestSessionView(TestCase):
@@ -214,7 +214,7 @@ class TestSessionView(TestCase):
         view.set_goals(goal1)
         tpview.draw()
         vim.set_bufname_lines.assert_any_call(
-            '^/Goals/$', goal1.tolines.return_value)
+            '/Goals/', goal1.tolines.return_value)
 
     def test_show_message_focused(self):
         '''Test method `show_message` when the view is focused.'''
@@ -225,7 +225,7 @@ class TestSessionView(TestCase):
         view.show_message('info', 'msg')
         tpview.draw()
         vim.set_bufname_lines.assert_called_once_with(
-            '^/Messages/$', ['msg'])
+            '/Messages/', ['msg'])
 
     def test_set_goals_unfocused(self):
         '''Test method `set_goals` when the view is unfocused.'''
@@ -240,7 +240,7 @@ class TestSessionView(TestCase):
         view.focus()
         tpview.draw()
         vim.set_bufname_lines.assert_any_call(
-            '^/Goals/$', ['goal'])
+            '/Goals/', ['goal'])
 
     def test_show_message_unfocused(self):
         '''Test method `show_message` when the view is unfocused.'''
@@ -253,4 +253,4 @@ class TestSessionView(TestCase):
         view.show_message('info', 'msg2\nmsg3')
         tpview.draw()
         vim.set_bufname_lines.assert_any_call(
-            '^/Messages/$', ['msg1', 'msg2', 'msg3'])
+            '/Messages/', ['msg1', 'msg2', 'msg3'])
