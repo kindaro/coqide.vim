@@ -253,7 +253,7 @@ class TestFeedbacksFromXml(unittest.TestCase):
         self.assertEqual(res, {'type': 'message',
                                'state_id': xp.StateID(42),
                                'content': {
-                                   'loc': xp.Some(xp.Location(3, 5)),
+                                   'loc': xp.Location(3, 5),
                                    'message': xp.Message('info', 'Message')
                                }})
 

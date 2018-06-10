@@ -31,8 +31,7 @@ class _Task:
             return
 
         if self._done:
-            raise RuntimeError('Run task "{}" twice'
-                               .format(self._func.__qualname__))
+            raise RuntimeError('Run task twice')
         self._done = True
         self._func(*self._args, **self._kwargs)
 

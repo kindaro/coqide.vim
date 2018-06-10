@@ -21,7 +21,7 @@ class TestTask(TestCase):
 
     def test_run_twice(self):
         '''Test running a task twice.'''
-        func = Mock()
+        func = MagicMock()
         task = _Task(func, (1, 2), {'key': 3})
         task.run()
         self.assertRaises(RuntimeError, task.run)

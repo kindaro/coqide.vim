@@ -88,6 +88,7 @@ class TestSession(TestCase):
             None
         ]
         stm.get_tip_stop.side_effect = [Mark(2, 3)]
+        stm.get_end_stop.side_effect = [Mark(2, 3)]
         vim.get_cursor.side_effect = [Mark(4, 9)]
         vim.get_sentence_after.side_effect = sentences
 
@@ -105,6 +106,7 @@ class TestSession(TestCase):
         session = Session(view, vim, worker)
 
         stm.get_tip_stop.side_effect = [Mark(4, 9)]
+        stm.get_end_stop.side_effect = [Mark(4, 9)]
         vim.get_cursor.side_effect = [Mark(2, 3)]
 
         session.to_cursor()
