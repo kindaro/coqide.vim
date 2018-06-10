@@ -27,16 +27,16 @@ class TestVimSupport(TestCase):
         vim = VimSupport(api)
         sentence = vim.get_sentence_after(Mark(1, 1))
         self.assertEqual(sentence,
-                         Sentence('Proof. ', Mark(1, 1), Mark(1, 8)))
-        sentence = vim.get_sentence_after(Mark(1, 8))
+                         Sentence('Proof.', Mark(1, 1), Mark(1, 7)))
+        sentence = vim.get_sentence_after(Mark(1, 7))
         self.assertEqual(sentence,
-                         Sentence('simpl.\n', Mark(1, 8), Mark(2, 1)))
-        sentence = vim.get_sentence_after(Mark(2, 1))
+                         Sentence(' simpl.', Mark(1, 7), Mark(1, 14)))
+        sentence = vim.get_sentence_after(Mark(1, 14))
         self.assertEqual(sentence,
-                         Sentence('  reflexivity.\n', Mark(2, 1), Mark(3, 1)))
-        sentence = vim.get_sentence_after(Mark(3, 1))
+                         Sentence('\n  reflexivity.', Mark(1, 14), Mark(2, 15)))
+        sentence = vim.get_sentence_after(Mark(2, 15))
         self.assertEqual(sentence,
-                         Sentence('Qed.\n', Mark(3, 1), Mark(4, 1)))
+                         Sentence('\nQed.', Mark(2, 15), Mark(3, 5)))
 
     def test_get_cursor(self):
         '''Test method `get_cursor`.'''

@@ -36,7 +36,8 @@ if !exists('g:coqide_auto_clear_message')
 endif
 
 if g:coqide_debug
-    execute 'py3 plugin.setup_debug_log("' . g:coqide_debug_file . '")'
+    py3 from coqide import setup_debug_log
+    execute 'py3 setup_debug_log("' . g:coqide_debug_file . '")'
 endif
 
 let s:activated = 0
@@ -55,15 +56,18 @@ function! coqide#Activate()
     command! CoqBackward call coqide#Backward()
     command! CoqToCursor call coqide#ToCursor()
     command! CoqClearMessages call coqide#ClearMessages()
-    command! CoqShowGoal call coqide#ShowGoal()
-    command! CoqHideGoal call coqide#HideGoal()
-    command! CoqToggleGoal call coqide#ToggleGoal()
-    command! CoqShowMessage call coqide#ShowMessage()
-    command! CoqHideMessage call coqide#HideMessage()
-    command! CoqToggleMessage call coqide#ToggleMessage()
+    command! CoqShowGoals call coqide#ShowGoals()
+    command! CoqHideGoals call coqide#HideGoals()
+    command! CoqToggleGoals call coqide#ToggleGoals()
+    command! CoqShowMessages call coqide#ShowMessages()
+    command! CoqHideMessages call coqide#HideMessages()
+    command! CoqToggleMessages call coqide#ToggleMessage()
 
     let s:update_timer = timer_start(300, 'coqide#ProcessFeedbacks',
                 \ { 'repeat': -1 })
+
+    CoqShowGoals
+    CoqShowMessages
 endfunction
 
 function! coqide#Deactivate()
@@ -71,10 +75,13 @@ function! coqide#Deactivate()
         return
     endif
 
-    py3 plugin.cleanup()
-    let s:activated = 0
+    CoqHideGoals
+    CoqHideMessages
 
     call timer_stop(s:update_timer)
+
+    py3 plugin.cleanup()
+    let s:activated = 0
 
     delcommand CoqNewSession
     delcommand CoqCloseSession
@@ -82,12 +89,12 @@ function! coqide#Deactivate()
     delcommand CoqBackward
     delcommand CoqToCursor
     delcommand CoqClearMessages
-    delcommand CoqShowGoal
-    delcommand CoqHideGoal
-    delcommand CoqToggleGoal
-    delcommand CoqShowMessage
-    delcommand CoqHideMessage
-    delcommand CoqToggleMessage
+    delcommand CoqShowGoals
+    delcommand CoqHideGoals
+    delcommand CoqToggleGoals
+    delcommand CoqShowMessages
+    delcommand CoqHideMessages
+    delcommand CoqToggleMessages
 endfunction
 
 function! coqide#NewSession()
@@ -102,7 +109,7 @@ function! coqide#Forward()
     if g:coqide_auto_clear_message
         call coqide#ClearMessages()
     endif
-    py3 plugin.forward()
+    py3 plugin.forward_one()
     call timer_start(100, 'coqide#ProcessFeedbacks')
 endfunction
 
@@ -110,7 +117,7 @@ function! coqide#Backward()
     if g:coqide_auto_clear_message
         call coqide#ClearMessages()
     endif
-    py3 plugin.backward()
+    py3 plugin.backward_one()
     call timer_start(100, 'coqide#ProcessFeedbacks')
 endfunction
 
@@ -153,6 +160,8 @@ function! coqide#ShowGoals()
         return
     endif
 
+    let saved_winid = win_getid()
+
     let messages_winnr = bufwinnr('^/Messages/$')
     if  messages_winnr != -1
         " Create the goal window above the message window.
@@ -162,6 +171,8 @@ function! coqide#ShowGoals()
         call coqide#CreateWindow('/Goals/', 'coq-goals', 'rightbelow vnew')
     endif
 
+    call win_gotoid(saved_winid)
+
     py3 plugin.redraw_goals()
 endfunction
 
@@ -170,7 +181,7 @@ function! coqide#HideGoals()
         return
     endif
 
-    goals_bufnr = bufnr('^/Goals/$')
+    let goals_bufnr = bufnr('^/Goals/$')
     execute goals_bufnr . 'bdelete'
 endfunction
 
@@ -182,10 +193,12 @@ function! coqide#ToggleGoals()
     endif
 endfunction
 
-function! coqide#ShowMessage()
+function! coqide#ShowMessages()
     if bufwinnr('^/Messages/$') != -1
         return
     endif
+
+    let saved_winid = win_getid()
 
     let goals_winnr = bufwinnr('^/Goals/$')
     if  goals_winnr != -1
@@ -196,19 +209,21 @@ function! coqide#ShowMessage()
         call coqide#CreateWindow('/Messages/', 'coq-messages', 'rightbelow vnew')
     endif
 
-    py3 plugins.redraw_messages()
+    call win_gotoid(saved_winid)
+
+    py3 plugin.redraw_messages()
 endfunction
 
-function! coqide#HideMessage()
+function! coqide#HideMessages()
     if bufwinnr('^/Messages/$') == -1
         return
     endif
 
-    messages_bufnr = bufnr('^/Messages/$')
+    let messages_bufnr = bufnr('^/Messages/$')
     execute messages_bufnr . 'bdelete'
 endfunction
 
-function! coqide#ToggleMessage()
+function! coqide#ToggleMessages()
     if bufwinnr('^/Messages/$') != -1
         call coqide#HideMessages()
     else
@@ -284,3 +299,4 @@ hi default CoqStcSent ctermbg=147 guibg=#AAAAFF
 hi default CoqStcAxiom ctermbg=227 guibg=#E8ED51
 hi default CoqStcVerified ctermbg=22 guibg=#2F5C00
 hi link CoqStcError Error
+hi link CoqStcErrorPart Error

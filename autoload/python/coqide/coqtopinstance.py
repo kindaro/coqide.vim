@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 '''Coqtop process handle.'''
 
+import logging
 from queue import Queue, Empty
 from subprocess import Popen, PIPE, TimeoutExpired
-from threading import Thread, Lock
+from threading import Thread
 import xml.etree.ElementTree as ET
 
 from . import xmlprotocol as xp
+
+
+logger = logging.getLogger(__name__)         # pylint: disable=C0103
 
 
 _XML_DOCTYPE = '''<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
@@ -18,6 +22,16 @@ _XML_DOCTYPE = '''<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
 
 class CoqtopQuit(Exception):
     '''The coqtop process quits.'''
+
+
+class _XMLLogger:        # pylint: disable=R0903
+    '''A class that converts the XML document to its string representation.'''
+
+    def __init__(self, xml):
+        self._xml = xml
+
+    def __str__(self):
+        return ET.tostring(self._xml).decode()
 
 
 class _CoqtopReader:
@@ -51,15 +65,16 @@ class _CoqtopReader:
         '''Get all the available responses.
 
         The method is non-blocking.'''
-        ret = []
+        responses = []
         try:
             while True:
-                res = self._res_queue.get_nowait()
-                if res is None or self._closed:
+                response = self._res_queue.get_nowait()
+                if response is None or self._closed:
                     break
+                responses.append(response)
         except Empty:
             pass
-        return ret
+        return responses
 
     def _thread_entry(self):
         chunks = []
@@ -75,7 +90,8 @@ class _CoqtopReader:
             try:
                 root = ET.fromstringlist(doc)
                 for element in root:
-                    self._process_output(element)
+                    logger.debug('Coqtop response: %s', _XMLLogger(element))
+                    self._res_queue.put(element)
                 chunks = []
             except ET.ParseError:
                 pass
@@ -104,6 +120,7 @@ class CoqtopInstance:
             raise RuntimeError('CoqtopInstance not spawned.')
         req_xml = xp.req_to_xml(rtype, req)
         req_bytes = ET.tostring(req_xml)
+        logger.debug('Coqtop request: %s', req_bytes)
         self._proc.stdin.write(req_bytes)
         self._proc.stdin.flush()
 

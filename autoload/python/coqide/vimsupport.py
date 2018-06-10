@@ -178,7 +178,8 @@ class _SentenceEndMatcher:
 
     def text(self):
         '''Return the matched text.'''
-        return ''.join(self._chars)
+        # Discard the last character, which should be a whitespace.
+        return ''.join(self._chars[:-1])
 
 
 class _MatchAdder:
@@ -234,6 +235,10 @@ class VimSupport:
         '''Return the current buffer.'''
         return self._api.current.buffer
 
+    def get_winid(self):
+        '''Return the window-ID of the current window.'''
+        return int(self._api.eval('win_getid()'))
+
     def get_sentence_after(self, start):
         '''Return the sentence object containing the text after the start mark.'''
         # Map 1-indexed position into 0-indexed.
@@ -245,34 +250,30 @@ class VimSupport:
 
         vimbuf = self._api.current.buffer
 
-        for char in vimbuf[start_line][start_col:]:
-            cursor_col += 1
+        for char in chain(vimbuf[start_line][start_col:], ['\n']):
             matched = matcher.feed(char)
             if matched:
                 stop = Mark(cursor_line, cursor_col)
                 return Sentence(matcher.text(), start, stop)
+            cursor_col += 1
 
-        for line in chain(vimbuf[start_line+1:], ['']):
+        for line in vimbuf[start_line+1:]:
             cursor_line += 1
             cursor_col = 1
-            matched = matcher.feed('\n')
-            if matched:
-                stop = Mark(cursor_line, cursor_col)
-                return Sentence(matcher.text(), start, stop)
 
-            for char in line:
-                cursor_col += 1
+            for char in chain(line, ['\n']):
                 matched = matcher.feed(char)
                 if matched:
                     stop = Mark(cursor_line, cursor_col)
                     return Sentence(matcher.text(), start, stop)
+                cursor_col += 1
 
         return None
 
     def get_cursor(self):
         '''Return the position of the cursor in Mark.'''
         _, line, col, _ = self._api.eval('getpos(".")')
-        return Mark(line, col)
+        return Mark(int(line), int(col))
 
     def add_match(self, start, stop, hlgroup):
         '''Add a match to the current window and return the match id.'''
@@ -322,5 +323,8 @@ class VimSupport:
         '''
         for buf in self._api.buffers:
             if buf.name == bufname:
+                saved_modif = buf.options['modifiable']
+                buf.options['modifiable'] = True
                 buf[:] = lines
+                buf.options['modifiable'] = saved_modif
                 break

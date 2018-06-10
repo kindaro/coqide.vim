@@ -1,6 +1,11 @@
 '''State and state machine.'''
 
+import logging
+
 from .types import StateID, Mark
+
+
+logger = logging.getLogger(__name__)         # pylint: disable=C0103
 
 
 class _State:
@@ -20,7 +25,8 @@ class _State:
 
     def move(self, line_offset):
         '''Move the position of the sentence.'''
-        self._view.move_match(self.state_id, line_offset)
+        if self._view:
+            self._view.move_match(self.state_id, line_offset)
 
     def set_flag(self, flag, loc=None):
         '''Set the flag of the state to `flag` to indicate in which stage
@@ -34,6 +40,9 @@ class _State:
 
         If `flag == "error"`, `loc` is the tuple marking the error region.
         '''
+        if not self._view:
+            return
+
         self._flag = flag
         for match_id in self._match_ids:
             self._view.remove_match(match_id)
@@ -99,22 +108,30 @@ class _StateList:
 
     def __init__(self):
         self._head_node = None
+        self._tail_node = None
         self._state_id_map = {}
         self._sentence_set = set()
 
     def init(self, state):
         '''Initialize the state list with the initial state.'''
-        initial_node = {'state': state, 'next': None}
+        initial_node = {'state': state, 'prev': None, 'next': None}
         self._head_node = initial_node
+        self._tail_node = initial_node
         self._state_id_map[state.state_id] = initial_node
 
     def find_prev(self, state_id):
         '''Return the previous state of `state_id`.'''
-        return self._state_id_map[state_id]['prev']['state']
+        prev = self._state_id_map[state_id]['prev']
+        if prev:
+            return prev['state']
+        return None
 
     def find_by_id(self, state_id):
         '''Return the state by the state id.'''
-        return self._state_id_map[state_id]['state']
+        node = self._state_id_map.get(state_id)
+        if node:
+            return node['state']
+        return None
 
     def find_by_mark(self, mark):
         '''Return the state before `mark`.'''
@@ -122,8 +139,7 @@ class _StateList:
         node = self._head_node['next']
         while node is not None:
             stop = node['state'].sentence.stop
-            if stop.line > mark.line or \
-                    (stop.line == mark.line and stop.col > mark.col):
+            if stop > mark:
                 break
             prev_node = node
             node = node['next']
@@ -137,8 +153,12 @@ class _StateList:
         '''Insert the new `state` after `prev_state`.'''
         assert not self.has_sentence(state.sentence)
         prev_node = self._state_id_map[prev_state.state_id]
-        node = {'state': state, 'next': prev_node['next']}
+        node = {'state': state, 'prev': prev_node, 'next': prev_node['next']}
         self._state_id_map[state.state_id] = node
+        if prev_node['next']:
+            prev_node['next']['prev'] = node
+        else:
+            self._tail_node = node
         prev_node['next'] = node
         self._sentence_set.add(state.sentence)
 
@@ -168,6 +188,10 @@ class _StateList:
 
         post_end_node = end_node['next']
         begin_node['next'] = post_end_node
+        if post_end_node:
+            post_end_node['prev'] = begin_node
+        else:
+            self._tail_node = begin_node
 
     def remove_after(self, begin):
         '''Remove the states from the next of `begin` to the end.'''
@@ -178,6 +202,11 @@ class _StateList:
             self._sentence_set.remove(state.sentence)
 
         begin_node['next'] = None
+        self._tail_node = begin_node
+
+    def end(self):
+        '''Return the state at the end of the document.'''
+        return self._tail_node['state']
 
 
 class STM:
@@ -193,7 +222,7 @@ class STM:
     def init(self):
         '''Initialize the state machine.'''
         self._coqtop.call('init', {})
-        res, err = self._get_value_response()
+        res, err = self._get_value_response('init')
         if err:
             raise RuntimeError(err['message'])
         state = _State.initial(res['init_state_id'])
@@ -220,8 +249,9 @@ class STM:
     def edit_at_prev(self):
         '''Edit at the previous state of the tip state.'''
         state = self._state_list.find_prev(self._tip_state.state_id)
-        self._edit_at_state(state)
-        self._get_goals()
+        if state:
+            self._edit_at_state(state)
+            self._get_goals()
 
     def edit_at(self, mark):
         '''Edit at `mark`.'''
@@ -235,13 +265,21 @@ class STM:
             return self._tip_state.sentence.stop
         return Mark(1, 1)
 
-    def _get_value_response(self):
+    def get_end_stop(self):
+        '''Return the stop mark of the state on the end of the document.'''
+        sentence = self._state_list.end().sentence
+        if sentence:
+            return sentence.stop
+        return Mark(1, 1)
+
+    def _get_value_response(self, rtype):
         '''Get responses from coqtop and return the first value response.
 
         The feedback responses are processed by method `process_feedback`.'''
-        tag, response = self._coqtop.get_response()
+        tag, response = self._coqtop.get_response(rtype)
         while tag == 'feedback':
             self.process_feedback(response)
+            tag, response = self._coqtop.get_response(rtype)
         return response
 
     def _add_one(self, sentence):
@@ -251,11 +289,11 @@ class STM:
             'state_id': self._tip_state.state_id,
             'verbose': True,
         })
-        res, err = self._get_value_response()
+        res, err = self._get_value_response('add')
 
         if err:
             state = _State(StateID(-1), sentence, self._view)
-            state.set_flag('error', loc=res['loc'])
+            state.set_flag('error', loc=err['loc'])
         else:
             state = _State(res['state_id'], sentence, self._view)
             state.set_flag('sent')
@@ -273,12 +311,13 @@ class STM:
 
     def _edit_at_state(self, state):
         '''Edit at `state`.'''
+        logger.debug('Edit at state %s', state.state_id.val)
 
         self._coqtop.call('edit_at', {'state_id': state.state_id})
-        res, err = self._get_value_response()
+        res, err = self._get_value_response('edit_at')
 
         if err:
-            good_id = res['state_id']
+            good_id = err['state_id']
             good_state = self._state_list.find_by_id(good_id)
             self._edit_at_state(good_state)
         elif res['focused_proof']:
@@ -289,6 +328,7 @@ class STM:
             for old_state in self._state_list.iter_between(state, qed_state):
                 old_state.set_flag(None)
             self._state_list.remove_between(state, qed_state)
+            self._tip_state = state
         else:
             # Clear the states after `state`.
             for old_state in self._state_list.iter_after(state):
@@ -299,23 +339,19 @@ class STM:
     def _get_goals(self):
         '''Get the goals of the tip state.'''
         self._coqtop.call('goal', {})
-        res, err = self._get_value_response()
+        res, err = self._get_value_response('goal')
 
-        if err:
-            state_id = res['state_id']
-            state = self._state_list.find_by_id(state_id)
-            state.set_flag('error', loc=res['loc'])
-            self._view.show_message('error', res['message'])
-        else:
+        if not err:
             self._view.set_goals(res['goals'])
 
     def _on_axiom(self, feedback):
         state = self._state_list.find_by_id(feedback['state_id'])
-        state.set_flag('axiom')
+        if state:
+            state.set_flag('axiom')
 
     def _on_processed(self, feedback):
         state = self._state_list.find_by_id(feedback['state_id'])
-        if state.get_flag() in (None, 'sent'):
+        if state and state.get_flag() in (None, 'sent'):
             state.set_flag('verified')
 
     def _on_message(self, feedback):
@@ -324,9 +360,10 @@ class STM:
         state_id = feedback['state_id']
         self._view.show_message(level, text)
 
-        if level == 'error' and state_id > 0:
+        if level == 'error':
             state = self._state_list.find_by_id(state_id)
-            state.set_flag('error', loc)
+            if state:
+                state.set_flag('error', loc)
 
     _FEEDBACK_HANDLERS = {
         'axiom': _on_axiom,
@@ -338,6 +375,7 @@ class STM:
 
     def process_feedback(self, feedback):
         '''Process the given feedback.'''
+        logger.debug('STM feedback: %s', feedback)
         fb_type = feedback['type']
         if fb_type in self._FEEDBACK_HANDLERS:
             self._FEEDBACK_HANDLERS[fb_type](self, feedback)

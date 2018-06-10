@@ -358,8 +358,13 @@ def _fb_message_from_xml(xml):
         loc = None
         text = _data_from_xml(xml[0][1])
     else:
-        loc = _data_from_xml(xml[0][1])
+        locopt = _data_from_xml(xml[0][1])
         text = _data_from_xml(xml[0][2])
+
+        if locopt is not None:
+            loc = locopt.val
+        else:
+            loc = None
     return {'loc': loc, 'message': Message(level, text)}
 
 

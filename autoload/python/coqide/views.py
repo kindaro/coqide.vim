@@ -2,7 +2,11 @@
 
 
 from collections import namedtuple
+import logging
 from threading import Lock
+
+
+logger = logging.getLogger(__name__)         # pylint: disable=C0103
 
 
 _MatchArg = namedtuple('_MatchArg', 'start stop type')
@@ -27,7 +31,8 @@ class _Task:
             return
 
         if self._done:
-            raise RuntimeError('Run a task twice')
+            raise RuntimeError('Run task "{}" twice'
+                               .format(self._func.__qualname__))
         self._done = True
         self._func(*self._args, **self._kwargs)
 
@@ -227,7 +232,10 @@ class TabpageView:
 
     def redraw_goals(self):
         '''Redraw the goals to the goal window.'''
-        self._vim.set_bufname_lines('/Goals/', self._goals.tolines())
+        if self._goals:
+            self._vim.set_bufname_lines('/Goals/', self._goals.tolines())
+        else:
+            self._vim.set_bufname_lines('/Goals/', [])
 
     def redraw_messages(self):
         '''Redraw the messages to the message window.'''
@@ -271,12 +279,14 @@ class SessionView:
 
     def show_message(self, level, message):
         '''Show the message in the message window.'''
+        logger.debug('SView show message: %s %s', level, message)
         self._messages.append((level, message))
         if self._focused:
             self._tabpage_view.show_message(level, message)
 
     def set_goals(self, goals):
         '''Show the goals in the goal window.'''
+        logger.debug('SView set goals: %s', goals)
         self._goals = goals
         if self._focused:
             self._tabpage_view.set_goals(goals)
@@ -314,12 +324,21 @@ class SessionView:
 
     def new_match(self, match_id, start, stop, match_type):
         '''Create a new match on the window and return the match object.'''
+        logger.debug('SView new match: %s %s %s %s', match_id, start, stop,
+                     match_type)
         self._match_view.add(match_id, start, stop, match_type)
 
     def move_match(self, match_id, line_offset):
         '''Move the position of a match.'''
+        logger.debug('SView move match: %s %s', match_id, line_offset)
         self._match_view.move(match_id, line_offset)
 
     def remove_match(self, match_id):
         '''Remove a match.'''
+        logger.debug('SView remove match: %s', match_id)
         self._match_view.remove(match_id)
+
+    def destroy(self):
+        '''Destroy the view.'''
+        self.unfocus()
+        self.set_inactive()
