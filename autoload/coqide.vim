@@ -31,8 +31,8 @@ if !exists('g:coqide_no_mappings')
     let g:coqide_no_mappings = 0
 endif
 
-if !exists('g:coqide_auto_clear_message')
-    let g:coqide_auto_clear_message = 1
+if !exists('g:coqide_auto_clear_messages')
+    let g:coqide_auto_clear_messages = 1
 endif
 
 if g:coqide_debug
@@ -106,7 +106,7 @@ function! coqide#CloseSession()
 endfunction
 
 function! coqide#Forward()
-    if g:coqide_auto_clear_message
+    if g:coqide_auto_clear_messages
         call coqide#ClearMessages()
     endif
     py3 plugin.forward_one()
@@ -114,7 +114,7 @@ function! coqide#Forward()
 endfunction
 
 function! coqide#Backward()
-    if g:coqide_auto_clear_message
+    if g:coqide_auto_clear_messages
         call coqide#ClearMessages()
     endif
     py3 plugin.backward_one()
@@ -122,7 +122,7 @@ function! coqide#Backward()
 endfunction
 
 function! coqide#ToCursor()
-    if g:coqide_auto_clear_message
+    if g:coqide_auto_clear_messages
         call coqide#ClearMessages()
     endif
     py3 plugin.to_cursor()
