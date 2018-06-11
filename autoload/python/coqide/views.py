@@ -311,6 +311,7 @@ class SessionView:
     def set_active(self):
         '''Set the view as active in the current window.'''
         winid = self._vim.get_winid()
+        logger.debug('Session active in %s', winid)
         self._match_view.set_active(winid)
         self._tabpage_view.set_goals(self._goals)
         for level, message in self._messages:
@@ -319,6 +320,7 @@ class SessionView:
     def set_inactive(self):
         '''Set the view as inactive in the current window.'''
         winid = self._vim.get_winid()
+        logger.debug('Session inactive in %s', winid)
         self._match_view.set_inactive(winid)
 
     def new_match(self, match_id, start, stop, match_type):
