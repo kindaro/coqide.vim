@@ -50,7 +50,7 @@ Vim8/Neovim compiled with Python3 support. You can check by using `echo has('pyt
     command. The default binding is <f4> in Normal mode and <C-e> in
     Insert mode.
 
-:CoqClearMessage                                *:CoqClearMessage*
+:CoqClearMessages                               *:CoqClearMessages*
     Clear the messages in the |coqide-message-window|.
 
 :CoqNewSession                                  *:CoqNewSession*
@@ -68,36 +68,23 @@ Vim8/Neovim compiled with Python3 support. You can check by using `echo has('pyt
     (depending on |g:coqide_auto_close_session|), so |:CoqCloseSession| doesn't
     need to be called manually.
 
-:CoqShowGoal                                    *:CoqShowGoal*
+:CoqShowGoals                                   *:CoqShowGoals*
     Show |coqide-goal-window|.
 
-:CoqHideGoal                                    *:CoqHideGoal*
+:CoqHideGoals                                   *:CoqHideGoals*
     Hide |coqide-goal-window|.
 
-:CoqToggleGoal                                  *:CoqToggleGoal*
+:CoqToggleGoals                                 *:CoqToggleGoals*
     Toggle the visibility of |coqide-goal-window|.
 
-:CoqShowMessage                                 *:CoqShowMessage*
+:CoqShowMessages                                *:CoqShowMessages*
     Show |coqide-message-window|.
 
-:CoqHideMessage                                 *:CoqHideMessage*
+:CoqHideMessages                                *:CoqHideMessages*
     Hide |coqide-message-window|.
 
-:CoqToggleMessage                               *:CoqToggleMessage*
+:CoqToggleMessages                              *:CoqToggleMessages*
     Toggle the visibility of |coqide-message-window|.
-
-:CoqActivate                                    *:CoqActivate*
-    Activate the CoqIDE plugin.
-
-    The CoqIDE plugin is activated automatically when the first Coq file is
-    opened, so |:CoqActivate| doesn't need to be called manually.
-
-:CoqDeactivate                                  *:CoqDeactivate*
-    Deactivate the CoqIDE plugin, close all the Coq windows and kill all the
-    coqtop processes.
-
-    The CoqIDE plugin is deactivated automatically when Vim is quitting, so
-    |:CoqDeactivate| doesn't need to be called manually.
 
 ==============================================================================
 4. Windows                                      *coqide-windows*
@@ -154,18 +141,17 @@ g:coqide_no_mappings                            *g:coqide_no_mappings*
     The default value is 0.
 
     The default key mappings are:
-    - <f2> to |:CoqForward| in Normal mode
-    - <f3> to |:CoqBackward| in Normal mode
-    - <f4> to |:CoqToCursor| in Normal mode
-    - <C-e> to |:CoqToCursor| in Insert mode
+    - <f2> to |:CoqForward|
+    - <f3> to |:CoqBackward|
+    - <f4> to |:CoqToCursor|
 
-g:coqide_auto_clear_message                     *g:coqide_auto_clear_message*
+g:coqide_auto_clear_messages                    *g:coqide_auto_clear_messages*
     Whether to clear the messages in |coqide-message-window| before running a
     command. It can be set to 0 to disable the behavior.
 
     The default value is 1.
 
-    |:CoqClearMessage| can manually clear the messages.
+    |:CoqClearMessages| can manually clear the messages.
 
 ==============================================================================
 6. Incomplete Features                          *coqide-incomplete-features*
@@ -191,6 +177,13 @@ g:coqide_auto_clear_message                     *g:coqide_auto_clear_message*
     sentence, some of the following proofs do not need to be validated again.
     However, this ability also depends on the change-reporting feature so as
     to precisely know which sentences are changed and which not.
+
+6. Multi-window same buffer editing.
+    Handle the cases when the same buffer is rendered in more than one
+    windows.
+
+7. Tabpage support.
+    Handle the cases when switching between tabpages.
 
 ==============================================================================
 7. FAQ                                          *coqide-faq*
