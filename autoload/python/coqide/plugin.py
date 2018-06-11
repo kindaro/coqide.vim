@@ -225,7 +225,7 @@ class Plugin:
         '''Set the session inactive in a window.'''
         logger.debug('Session [%s]: set window inactive', buf.name)
         view = self._session_views[buf.number]
-        view.set_active()
+        view.set_inactive()
 
     @_catch_exception
     @_draw_views
