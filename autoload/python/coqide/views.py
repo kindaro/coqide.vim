@@ -73,10 +73,11 @@ class _TaskExecutor:
         Return True if the task exists.'''
         with self._lock:
             task = self._task_map.get(key, None)
-            if task:
-                task.cancel()
-                return True
-            return False
+
+        if task:
+            task.cancel()
+            return True
+        return False
 
     def has_task(self):
         '''Return True if the executor has scheduled tasks.'''
@@ -85,10 +86,12 @@ class _TaskExecutor:
     def run_all(self):
         '''Run all the tasks.'''
         with self._lock:
-            for task in self._task_list:
-                task.run()
+            tasks = self._task_list[:]
             self._task_list.clear()
             self._task_map.clear()
+
+        for task in tasks:
+            task.run()
 
 
 class _Match:
