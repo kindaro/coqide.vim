@@ -26,16 +26,16 @@ doc/coqide.txt online.
 ### :CoqForward
 Process the next command.
 
-The default binding is `<f2>` in Normal mode.
+The default binding is `<f2>`.
 
 ### :CoqBackward
 Go back to the previous state.
 
-The default binding is `<f3>` in Normal mode.
+The default binding is `<f3>`.
 
 ### :CoqToCursor
 Process until the command under the cursor if the cursor is ahead of the last
 processed command in the buffer, or go back to the state of the sentence under
 the cursor if the cursor is behind the last processed command.
 
-The default binding is `<f4>` in Normal mode and `<C-e>` in Insert mode.
+The default binding is `<f4>`.
