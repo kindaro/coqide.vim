@@ -308,7 +308,10 @@ class VimSupport:
         saved_view = self._api.eval('winsaveview()')
         saved_winnr = self._api.eval('winnr()')
 
-        winnr = self._api.eval('win_id2win({})'.format(winid))
+        winnr = int(self._api.eval('win_id2win({})'.format(winid)))
+        if winnr == 0:
+            return
+
         self._api.command('{}wincmd w'.format(winnr))
         try:
             yield
