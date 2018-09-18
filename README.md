@@ -7,7 +7,7 @@ Vim8/Neovim compiled with Python3 support. You can check by using `echo has('pyt
 ## Installation
 For vim-plugged users, paste the following line into your .vimrc :
 
-    Plug 'thomasding/vim-coqide'
+    Plug 'iandingx/coqide.vim'
 
 ## Why CoqIDE?
 This plugin is for Coq programming as a counterpart of CoqIDE in Vim.
