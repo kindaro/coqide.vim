@@ -20,7 +20,7 @@ class Session:
         self._vim = vim
         self._worker = worker
 
-        self._coqtop.spawn(['coqtop', '-ideslave', '-main-channel', 'stdfds',
+        self._coqtop.spawn(['coqidetop', '-main-channel', 'stdfds',
                             '-async-proofs', 'on'])
         self._stm.init()
 
